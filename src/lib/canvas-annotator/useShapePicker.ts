@@ -60,7 +60,7 @@ export function useShapePicker({
   }
   const undo = () => { setHistory((h) => { if (!h.length) return h; const prev = h[h.length - 1]; setSavedRaw(prev); return h.slice(0, -1) }); setCurrent(null); setDrawing(false) }
   const [copied, setCopied] = useState('')
-  const [hidden, setHidden] = useState<Set<string>>(new Set())   // track ids whose shapes are not drawn (P1)
+  const [hidden, setHidden] = useState<Set<string>>(new Set())   // motion-tracker ids whose shapes are not drawn (P1)
   const [active, setActiveState] = useState(true) // editor pause/resume — when false, no canvas capture
 
   const finish = () => {
@@ -169,8 +169,8 @@ export function useShapePicker({
     if (commit) setSaved((s) => s.map((n, j) => (j === i ? shape : n)))
     else setSavedRaw((s) => s.map((n, j) => (j === i ? shape : n)))
   }
-  /** Remove every shape of a track id (all frames). */
-  const deleteTrack = (id: string) => setSaved((s) => s.filter((n) => n.id !== id))
+  /** Remove every shape of a motion tracker id (all frames). */
+  const deleteTracker = (id: string) => setSaved((s) => s.filter((n) => n.id !== id))
   const toggleHidden = (id: string) => setHidden((h) => { const n = new Set(h); n.has(id) ? n.delete(id) : n.add(id); return n })
   /** Push the current saved list onto the undo stack (start of a drag gesture). */
   const pushHistory = () => setHistory((h) => [...h.slice(-49), saved])
@@ -197,7 +197,7 @@ export function useShapePicker({
     finish, cancel,
     // editing
     setName, setCircle, setPoint, addToList, loadSaved, editSaved, deleteSaved, updateSaved, pushHistory,
-    deleteTrack, hidden, toggleHidden,
+    deleteTracker, hidden, toggleHidden,
     undo, canUndo: history.length > 0,
     // export
     copyCurrent, copyAll, clearSaved, formatShape,

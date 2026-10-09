@@ -25,8 +25,8 @@ const PANEL_CSS = `
 .ann-chip{padding:.35rem .7rem;border-radius:9999px;font-size:.8rem;font-family:'DM Mono',monospace;transition:all .2s;cursor:pointer;border:1px solid rgba(250,247,240,.12)}
 `
 
-/** Saved shapes grouped into tracks by id, in first-seen order, rows sorted by frame (P1, walk 2). */
-export function groupTracks(saved: CanvasShape[]): { id: string; kind: ShapeKind; rows: { n: CanvasShape; i: number }[] }[] {
+/** Saved shapes grouped into motion trackers by id, in first-seen order, rows sorted by frame (P1, walk 2). "Track" is a timeline layer (Camtasia sense). */
+export function groupTrackers(saved: CanvasShape[]): { id: string; kind: ShapeKind; rows: { n: CanvasShape; i: number }[] }[] {
   const groups: { id: string; kind: ShapeKind; rows: { n: CanvasShape; i: number }[] }[] = []
   saved.forEach((n, i) => {
     let g = groups.find((x) => x.id === n.id)
@@ -207,7 +207,7 @@ export function AnnotatorPanel({
             {saved.length > 0 && (
               <div className="flex flex-col gap-2 border-t border-ws-border-subtle pt-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-text-tertiary">Saved ({saved.length})</span>
+                  <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-text-tertiary">Motion trackers ({groupTrackers(saved).length}) · {saved.length} shapes</span>
                   <div className="flex gap-2">
                     <button data-testid="copy-all" onClick={picker.copyAll} className="ann-btn">{picker.copied === 'all' ? '✓ copied all' : 'copy all'}</button>
                     {extraActions}
@@ -216,16 +216,16 @@ export function AnnotatorPanel({
                   </div>
                 </div>
                 <div data-testid="saved-list" className="flex flex-col gap-1 bg-black/30 rounded-lg p-2 max-h-56 overflow-y-auto">
-                  {groupTracks(saved).map((g) => {
+                  {groupTrackers(saved).map((g) => {
                     const open = !collapsed.has(g.id); const hidden = picker.hidden.has(g.id)
                     const kindIcon = g.kind === 'circle' ? '○' : g.kind === 'line' ? '╱' : '▱'
                     return (
-                      <div key={g.id} data-testid={`track-${g.id}`} className="flex flex-col">
+                      <div key={g.id} data-testid={`tracker-${g.id}`} className="flex flex-col">
                         <div className="flex items-center gap-2 text-[0.68rem] font-ws-mono text-ws-text-primary">
-                          <button data-testid={`track-toggle-${g.id}`} onClick={() => setCollapsed((c) => { const n = new Set(c); n.has(g.id) ? n.delete(g.id) : n.add(g.id); return n })} className="ann-btn !px-1.5 !py-0.5" title={open ? 'Collapse' : 'Expand'}>{open ? '▾' : '▸'}</button>
+                          <button data-testid={`tracker-toggle-${g.id}`} onClick={() => setCollapsed((c) => { const n = new Set(c); n.has(g.id) ? n.delete(g.id) : n.add(g.id); return n })} className="ann-btn !px-1.5 !py-0.5" title={open ? 'Collapse' : 'Expand'}>{open ? '▾' : '▸'}</button>
                           <span className="truncate flex-1" style={hidden ? { opacity: 0.5 } : undefined}>{kindIcon} {g.id} <span className="text-ws-text-tertiary">· {g.rows.length} {g.rows.some((r) => r.n.frame !== undefined) ? 'frame' : 'shape'}{g.rows.length !== 1 ? 's' : ''}</span></span>
-                          <button data-testid={`track-hide-${g.id}`} onClick={() => picker.toggleHidden(g.id)} className="ann-btn !px-1.5 !py-0.5" title={hidden ? 'Show on canvas' : 'Hide on canvas'}>{hidden ? '◌' : '◉'}</button>
-                          <button data-testid={`track-delete-${g.id}`} onClick={() => picker.deleteTrack(g.id)} className="ann-btn !px-1.5 !py-0.5" title="Delete the whole track">×</button>
+                          <button data-testid={`tracker-hide-${g.id}`} onClick={() => picker.toggleHidden(g.id)} className="ann-btn !px-1.5 !py-0.5" title={hidden ? 'Show on canvas' : 'Hide on canvas'}>{hidden ? '◌' : '◉'}</button>
+                          <button data-testid={`tracker-delete-${g.id}`} onClick={() => picker.deleteTracker(g.id)} className="ann-btn !px-1.5 !py-0.5" title="Delete the whole motion tracker">×</button>
                         </div>
                         {open && g.rows.map(({ n, i }) => (
                           <div key={`${n.id}-${n.frame ?? 'x'}-${i}`} data-testid={`saved-row-${i}`} className="flex items-center gap-2 pl-6 text-[0.66rem] font-ws-mono text-ws-text-secondary">

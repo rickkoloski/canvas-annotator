@@ -34,10 +34,11 @@ write it; both read it. One file per canvas, or per shot when the canvas is a vi
 - **`frame`** (integer, optional) places a shape on one video frame. Shapes without `frame`
   are timeless, which is the June 2026 behaviour. `frame` is meaningless for `svg` and
   `image` canvases and is ignored there.
-- **A track** is all shapes sharing an `id` across frames. video-fx reads a polygon track
-  with four points per frame as a quad (`track.anchors`, `track.anchor_id`), and orders the
-  points TL, TR, BR, BL itself, so click order does not matter. Circle tracks are the
-  planned input for a `pin` effect.
+- **A motion tracker** is all shapes sharing an `id` across frames (the followed object; "track"
+  means a timeline layer, as in Camtasia). video-fx reads a polygon tracker with four points per
+  frame as a quad (`motion_tracking.anchors`, `motion_tracking.motion_trackers`), and orders the
+  points TL, TR, BR, BL itself, so click order does not matter. Circle trackers drive `pin` and
+  `bubble` effects.
 - **Scaling.** If `canvas.width` differs from the engine's tracking resolution, the engine
   scales the points. Authoring at the tracking resolution avoids rounding.
 - **Engine output** uses the same document with two extra per-shape fields:
@@ -50,7 +51,7 @@ write it; both read it. One file per canvas, or per shot when the canvas is a vi
 | file | written by | read by |
 |---|---|---|
 | `work/<shot>/keyframes_sample/manifest.json` | `vidfx keyframes` | the annotator's frame strip |
-| `work/<shot>/anchors.json` | the annotator (Save), or by hand | `vidfx track` via `track.anchors` |
+| `work/<shot>/anchors.json` | the annotator (Save), or by hand | `vidfx track` via `motion_tracking.anchors` |
 | `work/<shot>/refined.json` | `vidfx track` | the annotator's review view (Phase 3) |
 
 The manifest is not an anchors file; it lists frames: `{frame, t, path, grid, width, height}`

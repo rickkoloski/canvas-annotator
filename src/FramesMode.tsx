@@ -244,7 +244,7 @@ function EngineConsole({ shot, manifest, onManifest, onResults }: { shot: string
         <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">engine</span>
         <input data-testid="sample-frame-input" value={frameReq} onChange={(e) => setFrameReq(e.target.value)} placeholder="frame #" className="font-ws-mono text-xs bg-transparent text-ws-text-primary border border-ws-border-subtle rounded-lg px-2 py-1 w-20 outline-none focus:border-ws-terracotta" />
         <button data-testid="sample-frame-run" disabled={!!busy} onClick={sampleFrame} className="ann-btn disabled:opacity-40">sample frame</button>
-        {b('track', 'track', [], onResults)}
+        {b('track', 'track motion', [], onResults)}
         {b('crops', 'crops', ['--frames', '248,434'], onResults)}
         {b('render', 'render draft', ['--res', '1080', '--stills'], onResults)}
       </div>
