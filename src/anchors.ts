@@ -43,3 +43,44 @@ export async function runEngine(cmd: string, shot: string, args: string[], onChu
   for (;;) { const { value, done } = await reader.read(); if (done) break; const s = dec.decode(value, { stream: true }); all += s; onChunk(s) }
   const m = /exit (\d+)\s*$/.exec(all); return m ? Number(m[1]) : 1
 }
+
+/** A shape in refined.json: the engine's result plus what it was given. */
+export type RefinedShape = CanvasShape & { given?: { x: number; y: number }[]; moved_px?: number[] }
+export type RefinedDoc = AnchorsDoc & { shapes: RefinedShape[] }
+
+export const REFINED = '#3DDC84'
+
+/** Replace saved shapes with the engine's refined geometry for matching (id, frame); `frame` undefined = all. */
+export function acceptRefined(saved: CanvasShape[], refined: RefinedShape[], frame?: number): CanvasShape[] {
+  return saved.map((s) => {
+    const r = refined.find((x) => x.id === s.id && x.frame === s.frame && (frame === undefined || s.frame === frame))
+    if (!r || r.kind !== s.kind) return s
+    if (s.kind === 'circle' && r.kind === 'circle') return { ...s, x: r.x, y: r.y }
+    if (s.kind !== 'circle' && r.kind !== 'circle') return { ...s, points: r.points.map((p) => ({ x: p.x, y: p.y })) }
+    return s
+  })
+}
+
+/** Refined shapes on `frame`, styled for the overlay (green, open polygons so the red/given one shows through). */
+export function refinedOverlay(refined: RefinedShape[], frame: number): CanvasShape[] {
+  return refined.filter((r) => r.frame === frame).map((r) => ({ ...r, id: `refined-${r.id}`, label: `${r.label} ✓`, color: REFINED, ...(r.kind === 'polygon' ? { open: false } : {}) }))
+}
+
+/** Nearest vertex of a saved shape on `frame` within `tol` canvas units of (x, y). */
+export function hitVertex(saved: CanvasShape[], frame: number, x: number, y: number, tol: number): { index: number; point: number } | null {
+  const hits: { index: number; point: number; d: number }[] = []
+  saved.forEach((s, index) => {
+    if (s.frame !== frame) return
+    const pts = s.kind === 'circle' ? [{ x: s.x, y: s.y }] : s.points
+    pts.forEach((p, point) => { const d = Math.hypot(p.x - x, p.y - y); if (d <= tol) hits.push({ index, point, d }) })
+  })
+  if (!hits.length) return null
+  const b = hits.sort((p, q) => p.d - q.d)[0]
+  return { index: b.index, point: b.point }
+}
+
+/** Move one vertex (or a circle's centre) of a shape. */
+export function moveVertex(s: CanvasShape, point: number, x: number, y: number): CanvasShape {
+  if (s.kind === 'circle') return { ...s, x: Math.round(x), y: Math.round(y) }
+  return { ...s, points: s.points.map((p, i) => (i === point ? { x: Math.round(x), y: Math.round(y) } : p)) }
+}

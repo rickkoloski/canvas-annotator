@@ -163,6 +163,13 @@ export function useShapePicker({
   /** Re-open a saved shape for editing: it leaves the list and becomes `current` (add puts it back). */
   const editSaved = (i: number) => { const n = saved[i]; if (!n) return; setSaved((s) => s.filter((_, j) => j !== i)); setCurrent({ ...n }); setDrawing(false); setSelPt(0) }
   const deleteSaved = (i: number) => setSaved((s) => s.filter((_, j) => j !== i))
+  /** Replace saved[i]. `commit` pushes an undo entry (use once per gesture, e.g. at drag start). */
+  const updateSaved = (i: number, shape: CanvasShape, commit = true) => {
+    if (commit) setSaved((s) => s.map((n, j) => (j === i ? shape : n)))
+    else setSavedRaw((s) => s.map((n, j) => (j === i ? shape : n)))
+  }
+  /** Push the current saved list onto the undo stack (start of a drag gesture). */
+  const pushHistory = () => setHistory((h) => [...h.slice(-49), saved])
 
   const liveShapes: CanvasShape[] = useMemo(
     () => [...saved, ...(current ? [{ ...current, color: highlightColor, wip: true }] : [])],
@@ -185,7 +192,7 @@ export function useShapePicker({
     // capture control
     finish, cancel,
     // editing
-    setName, setCircle, setPoint, addToList, loadSaved, editSaved, deleteSaved,
+    setName, setCircle, setPoint, addToList, loadSaved, editSaved, deleteSaved, updateSaved, pushHistory,
     undo, canUndo: history.length > 0,
     // export
     copyCurrent, copyAll, clearSaved, formatShape,

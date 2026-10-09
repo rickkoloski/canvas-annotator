@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnnotatorPanel, createSvgSpace, useShapePicker, type CanvasShape } from './lib/canvas-annotator'
 import { ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
-import { buildAnchorsDoc, overlayFor, runEngine, type AnchorsDoc, type Manifest } from './anchors'
+import { acceptRefined, buildAnchorsDoc, hitVertex, moveVertex, overlayFor, refinedOverlay, runEngine, type AnchorsDoc, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
 
 /**
  * Video-frame mode (PLAN.md Phase 2 + tranche 1): a frame strip over the engine's sampled
@@ -17,9 +17,17 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   const [view, setView] = useState<'frames' | 'results'>(new URLSearchParams(window.location.search).get('view') === 'results' ? 'results' : 'frames')
   const [loupe, setLoupe] = useState(true)
   const [resultsKey, setResultsKey] = useState(0)
+  const [refined, setRefined] = useState<RefinedShape[]>([])
+  const [showRefined, setShowRefined] = useState(true)
+  const drag = useRef<{ index: number; point: number } | null>(null)
+  const dragged = useRef(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const base = `/work/${shot}`
 
+  const loadRefined = async () => {
+    const r = await fetch(`${base}/refined.json?v=${Date.now()}`)
+    setRefined(r.ok ? ((await r.json()) as RefinedDoc).shapes : [])
+  }
   const loadManifest = async () => {
     const r = await fetch(`${base}/keyframes_sample/manifest.json`)
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}: run \`vidfx keyframes shots/${shot}.yaml\` first`)
@@ -32,6 +40,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
     loadManifest().then(async () => {
       const a = await fetch(`${base}/anchors.json`)
       if (a.ok) { const doc: AnchorsDoc = await a.json(); picker.loadSaved(doc.shapes) }
+      await loadRefined()
     }).catch((e) => setError(String(e.message ?? e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shot])
@@ -44,8 +53,9 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
     if (!cur) return [] as CanvasShape[]
     const { here, ghosts } = overlayFor(picker.saved, cur.frame)
     const wip = picker.current ? [{ ...picker.current, color: '#F0B47A', wip: true }] : []
-    return [...ghosts, ...here, ...wip]
-  }, [picker.saved, picker.current, cur])
+    const ref = showRefined ? refinedOverlay(refined, cur.frame) : []
+    return [...ghosts, ...ref, ...here, ...wip]
+  }, [picker.saved, picker.current, cur, refined, showRefined])
   useShapeOverlay(space, overlay)
 
   // keyboard: [ and ] step frames, z toggles the loupe
@@ -68,6 +78,37 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   }
   const copyJson = () => { if (manifest) navigator.clipboard?.writeText(JSON.stringify(buildAnchorsDoc(manifest, picker.saved), null, 2)) }
 
+  // ── tranche 2.3: drag a vertex of a saved shape on this frame ──
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (!cur || !drawing || picker.current) return
+    const p = space.screenToCanvas(e.clientX, e.clientY); if (!p) return
+    const hit = hitVertex(picker.saved, cur.frame, p.x, p.y, space.pxToCanvas(10))
+    if (!hit) return
+    drag.current = hit; dragged.current = false; picker.pushHistory(); e.preventDefault()
+  }
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!drag.current) return
+    const p = space.screenToCanvas(e.clientX, e.clientY); if (!p) return
+    dragged.current = true
+    picker.updateSaved(drag.current.index, moveVertex(picker.saved[drag.current.index], drag.current.point, p.x, p.y), false)
+  }
+  const onMouseUp = () => { drag.current = null }
+  const onClick = (e: React.MouseEvent) => { if (dragged.current) { dragged.current = false; return } picker.onCanvasClick(e) }
+
+  // ── tranche 2.2 / 2.4: accept the engine's refinement; save and re-track ──
+  const hereRefined = cur ? refined.filter((r) => r.frame === cur.frame) : []
+  const accept = (frame?: number) => picker.loadSaved(acceptRefined(picker.saved, refined, frame))
+  const [retracking, setRetracking] = useState(false)
+  const retrack = async () => {
+    if (!manifest || retracking) return
+    setRetracking(true)
+    await fetch(`${base}/anchors.json`, { method: 'PUT', body: JSON.stringify(buildAnchorsDoc(manifest, picker.saved), null, 2) })
+    const code = await runEngine('track', shot, [], () => {})
+    await loadRefined(); setResultsKey((k) => k + 1); setRetracking(false)
+    setSavedMsg(code === 0 ? 'saved and re-tracked; refined overlay updated' : `re-track failed (exit ${code})`)
+    window.setTimeout(() => setSavedMsg(''), 4000)
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -84,7 +125,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
 
       {view === 'frames' && manifest && cur && (
         <div style={drawing ? { marginRight: 360 } : undefined}>{/* the floating panel docks in this gutter; it must never cover the canvas */}
-          <div data-testid="canvas" onClick={picker.onCanvasClick} className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
+          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
             <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />
             {loupe && <Loupe src={`${base}/keyframes_sample/${cur.path}`} svgRef={svgRef} shapes={overlay} />}
           </div>
@@ -101,7 +142,22 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
             })}
           </div>
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
-          <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => setResultsKey((k) => k + 1)} />
+          {refined.length > 0 && (
+            <div data-testid="refine-bar" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
+              <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">refined</span>
+              <button data-testid="refined-toggle" onClick={() => setShowRefined((v) => !v)} className={`ann-chip ${showRefined ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>{showRefined ? 'shown' : 'hidden'}</button>
+              {hereRefined.map((r) => (
+                <span key={r.id} data-testid={`refine-row-${r.id}`} className="font-ws-mono text-xs text-ws-text-secondary flex items-center gap-2">
+                  {r.id} @{r.frame}: moved {r.moved_px?.map((m) => m.toFixed(0)).join('/')} px
+                  <button data-testid={`refine-accept-${r.id}`} onClick={() => accept(cur!.frame)} className="ann-btn">accept</button>
+                </span>
+              ))}
+              {hereRefined.length === 0 && <span className="text-xs text-ws-text-tertiary">no refined shape on this frame</span>}
+              <button data-testid="refine-accept-all" onClick={() => accept()} className="ann-btn ml-auto">accept all frames</button>
+              <button data-testid="retrack" disabled={retracking} onClick={retrack} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{retracking ? 'tracking…' : 'save & re-track'}</button>
+            </div>
+          )}
+          <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined() }} />
           {drawing && <AnnotatorPanel picker={picker} title={`Annotate · ${shot}`} extraActions={<>
             <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
             <button data-testid="save-anchors" onClick={save} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">save anchors.json</button>
