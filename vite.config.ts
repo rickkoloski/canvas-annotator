@@ -9,18 +9,19 @@ import { spawn } from 'node:child_process'
  * Dev-only bridge to video-fx (PLAN.md Phase 2, tranche 1.1 + 1.5). Local machine only;
  * never part of a build.
  *   GET  /work/** , /renders/**   files (with HTTP Range, so <video> can seek) and dir listings as JSON
- *   PUT  /work/<shot>/anchors.json  the page's Save (only this file kind is writable)
- *   POST /vidfx/run  {cmd, shot, args?}  runs an allow-listed vidfx command on a shot file and
+ *   PUT  /work/<shot>/anchors.json  the page's Save; PUT /shots/<name>.animation.md the exported script (only these two kinds are writable)
+ *   GET  /shots/**                 read-only (shot files, exported scripts)
+ *   POST /vidfx/run  {cmd, shot, args?}  runs an allow-listed vidfx command (incl. `script`) on a shot file and
  *                                        streams its output; the page is the operator console
  *   VIDFX_ROOT=~/src/ops/creative/video-fx   (default)
  */
 function vidfxBridge(): Plugin {
   const ROOT = (process.env.VIDFX_ROOT ?? path.join(os.homedir(), 'src/ops/creative/video-fx')).replace(/^~/, os.homedir())
   const VIDFX = path.join(ROOT, '.venv/bin/vidfx')
-  const MOUNTS: Record<string, string> = { '/work/': path.join(ROOT, 'work'), '/renders/': path.join(ROOT, 'renders') }
+  const MOUNTS: Record<string, string> = { '/work/': path.join(ROOT, 'work'), '/renders/': path.join(ROOT, 'renders'), '/shots/': path.join(ROOT, 'shots') }
   const TYPES: Record<string, string> = { '.json': 'application/json', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.yaml': 'text/yaml', '.npy': 'application/octet-stream', '.txt': 'text/plain' }
-  const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills'])
+  const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills', 'script'])
   const SAFE_ARG = /^[-\w.,=:/]+$/   // no spaces, no shell metacharacters; spawn without a shell anyway
   const SAFE_SHOT = /^[\w.-]+$/
   const readBody = (req: import('node:http').IncomingMessage) => new Promise<string>((resolve) => { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => resolve(b)) })
@@ -59,7 +60,8 @@ function vidfxBridge(): Plugin {
         if (!file.startsWith(base)) { res.statusCode = 403; return res.end('outside mount') }
 
         if (req.method === 'PUT') {
-          if (mount !== '/work/' || !file.endsWith('anchors.json')) { res.statusCode = 405; return res.end('only work/**/anchors.json is writable') }
+          const writable = (mount === '/work/' && file.endsWith('anchors.json')) || (mount === '/shots/' && file.endsWith('.animation.md'))
+          if (!writable) { res.statusCode = 405; return res.end('only work/**/anchors.json and shots/*.animation.md are writable') }
           const body = await readBody(req)
           try { JSON.parse(body) } catch { res.statusCode = 400; return res.end('not JSON') }
           fs.mkdirSync(path.dirname(file), { recursive: true })

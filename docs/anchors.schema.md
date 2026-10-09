@@ -44,6 +44,12 @@ write it; both read it. One file per canvas, or per shot when the canvas is a vi
 - **Engine output** uses the same document with two extra per-shape fields:
   `given` (the points as received) and `moved_px` (per-point refinement distance), written
   to `work/<shot>/refined.json`. A page can show given against refined and accept either.
+- **Beats** (optional, tranche 4): `beats: {lanes: [..], rows: [{n, t, lane, motion, target, meaning}], held: [{lane, from, to}]}`
+  plus `meta: {intent, surface, status, loop, updated}`, `notes: [..]`, `decisions: [{date, decision, by}]`.
+  Beats are named timeline markers; `t` is cumulative seconds, Δ is derived; lanes are timeline
+  tracks (Camtasia sense); `target` names a motion tracker. Effects in a shot file reference beats
+  with GSAP's position grammar (`"3"`, `"1+=0.3"`, `"<"`, `">"`); a quoted string that names a beat is
+  that beat, otherwise a numeric string is seconds. `vidfx script` renders the Animation Script.
 - Unknown fields are preserved by both sides; `version` bumps only on an incompatible change.
 
 ## Where files live
@@ -52,7 +58,8 @@ write it; both read it. One file per canvas, or per shot when the canvas is a vi
 |---|---|---|
 | `work/<shot>/keyframes_sample/manifest.json` | `vidfx keyframes` | the annotator's frame strip |
 | `work/<shot>/anchors.json` | the annotator (Save), or by hand | `vidfx track` via `motion_tracking.anchors` |
-| `work/<shot>/refined.json` | `vidfx track` | the annotator's review view (Phase 3) |
+| `work/<shot>/refined.json` | `vidfx track` | the annotator's refine bar |
+| `shots/<name>.animation.md` | `vidfx script` (the page's Beats tab runs it) | people; md-editor; Remotion briefs |
 
 The manifest is not an anchors file; it lists frames: `{frame, t, path, grid, width, height}`
 plus `canvas`, `fps`, `frames_total`, `source`, `shot`.

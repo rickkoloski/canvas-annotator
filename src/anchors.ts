@@ -4,6 +4,7 @@ import type { CanvasShape } from './lib/canvas-annotator'
 export type Manifest = {
   version: number; shot: string; source: string; fps: number; frames_total: number
   canvas: { kind: string; width: number; height: number }
+  effects?: { kind: string; tracker: string | null }[]
   frames: { frame: number; t: number; path: string; grid: string; width: number; height: number }[]
 }
 export type AnchorsDoc = { version: number; canvas: Record<string, unknown>; shapes: CanvasShape[] }

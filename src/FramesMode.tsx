@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnnotatorPanel, createSvgSpace, useShapePicker, type CanvasShape } from './lib/canvas-annotator'
 import { ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
 import { acceptRefined, buildAnchorsDoc, hitVertex, moveVertex, overlayFor, refinedOverlay, runEngine, type AnchorsDoc, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
+import { BeatsTab, MarkerStrip } from './BeatsMode'
+import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
 
 /**
  * Video-frame mode (PLAN.md Phase 2 + tranche 1): a frame strip over the engine's sampled
@@ -14,7 +16,9 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   const [error, setError] = useState('')
   const [idx, setIdx] = useState(0)
   const [savedMsg, setSavedMsg] = useState('')
-  const [view, setView] = useState<'frames' | 'results'>(new URLSearchParams(window.location.search).get('view') === 'results' ? 'results' : 'frames')
+  const [view, setView] = useState<'frames' | 'results' | 'beats'>((new URLSearchParams(window.location.search).get('view') as 'frames' | 'results' | 'beats') || 'frames')
+  const [beats, setBeats] = useState<Beats>(emptyBeats()); const [meta, setMeta] = useState<Meta>({})
+  const [notes, setNotes] = useState<string[]>([]); const [decisions, setDecisions] = useState<{ date: string; decision: string; by: string }[]>([])
   const [loupe, setLoupe] = useState(true)
   const [resultsKey, setResultsKey] = useState(0)
   const [refined, setRefined] = useState<RefinedShape[]>([])
@@ -39,7 +43,10 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
     setManifest(null); setError(''); setIdx(0)
     loadManifest().then(async () => {
       const a = await fetch(`${base}/anchors.json`)
-      if (a.ok) { const doc: AnchorsDoc = await a.json(); picker.loadSaved(doc.shapes) }
+      if (a.ok) {
+        const doc = (await a.json()) as AnchorsDoc & { beats?: Beats; meta?: Meta; notes?: string[]; decisions?: { date: string; decision: string; by: string }[] }
+        picker.loadSaved(doc.shapes); setBeats({ ...emptyBeats(), ...(doc.beats ?? {}) }); setMeta(doc.meta ?? {}); setNotes(doc.notes ?? []); setDecisions(doc.decisions ?? [])
+      }
       await loadRefined()
     }).catch((e) => setError(String(e.message ?? e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,14 +76,19 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   }, [manifest])
 
+  const extras = () => ({ beats, meta: { ...meta, updated: new Date().toISOString().slice(0, 10) }, notes, decisions })
+  const fullDoc = () => (manifest ? { ...buildAnchorsDoc(manifest, picker.saved), ...extras() } : null)
   const save = async () => {
-    if (!manifest) return
-    const doc = buildAnchorsDoc(manifest, picker.saved)
+    const doc = fullDoc(); if (!doc) return false
     const r = await fetch(`${base}/anchors.json`, { method: 'PUT', body: JSON.stringify(doc, null, 2) })
-    setSavedMsg(r.ok ? `saved ${doc.shapes.length} shapes → work/${shot}/anchors.json` : `save failed: ${r.status}`)
+    setSavedMsg(r.ok ? `saved ${doc.shapes.length} shapes, ${beats.rows.length} beats → work/${shot}/anchors.json` : `save failed: ${r.status}`)
     window.setTimeout(() => setSavedMsg(''), 4000)
+    return r.ok
   }
-  const copyJson = () => { if (manifest) navigator.clipboard?.writeText(JSON.stringify(buildAnchorsDoc(manifest, picker.saved), null, 2)) }
+  const copyJson = () => { const d = fullDoc(); if (d) navigator.clipboard?.writeText(JSON.stringify(d, null, 2)) }
+  const trackerIds = [...new Set(picker.saved.map((sh) => sh.id))]
+  const laneNames = beats.lanes.length ? beats.lanes : [...new Set((manifest?.effects ?? []).map((e) => e.kind).filter((k): k is string => !!k))]
+  const duration = manifest ? manifest.frames_total / manifest.fps : 0
 
   // ── tranche 2.3: drag a vertex of a saved shape on this frame ──
   const onMouseDown = (e: React.MouseEvent) => {
@@ -102,7 +114,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   const retrack = async () => {
     if (!manifest || retracking) return
     setRetracking(true)
-    await fetch(`${base}/anchors.json`, { method: 'PUT', body: JSON.stringify(buildAnchorsDoc(manifest, picker.saved), null, 2) })
+    await fetch(`${base}/anchors.json`, { method: 'PUT', body: JSON.stringify(fullDoc(), null, 2) })
     const code = await runEngine('track', shot, [], () => {})
     await loadRefined(); setResultsKey((k) => k + 1); setRetracking(false)
     setSavedMsg(code === 0 ? 'saved and re-tracked; refined overlay updated' : `re-track failed (exit ${code})`)
@@ -118,6 +130,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
         </label>
         <button data-testid="view-frames" className={`ann-chip ${view === 'frames' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('frames')}>frames</button>
         <button data-testid="view-results" className={`ann-chip ${view === 'results' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('results')}>results</button>
+        <button data-testid="view-beats" className={`ann-chip ${view === 'beats' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('beats')}>beats{beats.rows.length ? ` (${beats.rows.length})` : ''}</button>
         <button data-testid="loupe-toggle" className={`ann-chip ${loupe ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setLoupe((l) => !l)} title="z">loupe</button>
         {manifest && cur && <span data-testid="frame-info" className="ml-auto font-ws-mono text-xs text-ws-text-tertiary">frame {cur.frame} · t={cur.t.toFixed(2)}s · {cur.width}×{cur.height} · {picker.saved.filter((s) => s.frame === cur.frame).length} shape(s) here · {picker.saved.length} total · [ ] to step</span>}
       </div>
@@ -141,6 +154,8 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
               )
             })}
           </div>
+          <MarkerStrip beats={beats} setBeats={setBeats} duration={duration} sampleTimes={manifest.frames.map((f) => f.t)} currentT={cur.t} lanes={laneNames} trackerIds={trackerIds}
+            onMark={(lane, target) => setBeats(markBeat({ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }, cur.t, lane, target).beats)} />
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
           {refined.length > 0 && (
             <div data-testid="refine-bar" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
@@ -165,6 +180,10 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
         </div>
       )}
 
+      {view === 'beats' && manifest && (
+        <BeatsTab shot={shot} beats={{ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }} setBeats={setBeats} meta={meta} setMeta={setMeta} notes={notes} setNotes={setNotes}
+          decisions={decisions} setDecisions={setDecisions} trackerIds={trackerIds} duration={duration} onSaveAnchors={save} />
+      )}
       {view === 'results' && <>
         <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => setResultsKey((k) => k + 1)} />
         <Results key={resultsKey} shot={shot} />
