@@ -51,7 +51,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
 
   const overlay = useMemo(() => {
     if (!cur) return [] as CanvasShape[]
-    const { here, ghosts } = overlayFor(picker.saved, cur.frame)
+    const { here, ghosts } = overlayFor(picker.saved.filter((s) => !picker.hidden.has(s.id)), cur.frame)
     const wip = picker.current ? [{ ...picker.current, color: '#F0B47A', wip: true }] : []
     const ref = showRefined ? refinedOverlay(refined, cur.frame) : []
     return [...ghosts, ...ref, ...here, ...wip]
@@ -264,7 +264,7 @@ function Results({ shot }: { shot: string }) {
   const Row = ({ title, dir, names, testid }: { title: string; dir: string; names: string[]; testid: string }) => (
     <section className="mb-5">
       <h2 className="font-ws-mono text-xs uppercase tracking-widest text-ws-sage mb-2">{title} <span className="text-ws-text-tertiary">({names.length})</span></h2>
-      <div data-testid={testid} className="flex gap-2 overflow-x-auto pb-2">{names.map((n) => <a key={n} href={`/work/${shot}/${dir}/${n}`} target="_blank" rel="noreferrer"><img src={`/work/${shot}/${dir}/${n}`} alt={n} title={n} className="block h-44 w-auto rounded-lg border border-ws-border-subtle" /></a>)}</div>
+      <div data-testid={testid} className="flex gap-2 overflow-x-auto pb-2">{names.map((n) => <a key={n} className="shrink-0" href={`/work/${shot}/${dir}/${n}`} target="_blank" rel="noreferrer"><img src={`/work/${shot}/${dir}/${n}`} alt={n} title={n} className="block h-44 w-auto max-w-none rounded-lg border border-ws-border-subtle" /></a>)}</div>
     </section>
   )
   return (

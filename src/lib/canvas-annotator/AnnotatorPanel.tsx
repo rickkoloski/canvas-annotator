@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type React from 'react'
-import type { ShapeKind } from './types'
+import type { CanvasShape, ShapeKind } from './types'
 import type { ShapePicker } from './useShapePicker'
 import { useDraggable } from './useDraggable'
 
@@ -24,6 +24,18 @@ const PANEL_CSS = `
 .ann-btn:hover{color:#1a0e07;background:rgba(224,155,88,.85)}
 .ann-chip{padding:.35rem .7rem;border-radius:9999px;font-size:.8rem;font-family:'DM Mono',monospace;transition:all .2s;cursor:pointer;border:1px solid rgba(250,247,240,.12)}
 `
+
+/** Saved shapes grouped into tracks by id, in first-seen order, rows sorted by frame (P1, walk 2). */
+export function groupTracks(saved: CanvasShape[]): { id: string; kind: ShapeKind; rows: { n: CanvasShape; i: number }[] }[] {
+  const groups: { id: string; kind: ShapeKind; rows: { n: CanvasShape; i: number }[] }[] = []
+  saved.forEach((n, i) => {
+    let g = groups.find((x) => x.id === n.id)
+    if (!g) { g = { id: n.id, kind: n.kind, rows: [] }; groups.push(g) }
+    g.rows.push({ n, i })
+  })
+  for (const g of groups) g.rows.sort((a, b) => (a.n.frame ?? -1) - (b.n.frame ?? -1))
+  return groups
+}
 
 function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
@@ -56,6 +68,7 @@ export function AnnotatorPanel({
   extraActions?: React.ReactNode
 }) {
   const [min, setMin] = useState(false)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const { pos, handleProps } = useDraggable(initialPos)
   const { current, drawing, editing, saved } = picker
   const paused = !picker.active
@@ -202,14 +215,28 @@ export function AnnotatorPanel({
                     <button data-testid="clear-saved" onClick={picker.clearSaved} className="ann-btn">clear</button>
                   </div>
                 </div>
-                <div data-testid="saved-list" className="flex flex-col gap-1 bg-black/30 rounded-lg p-2 max-h-48 overflow-y-auto">
-                  {saved.map((n, i) => (
-                    <div key={`${n.id}-${n.frame ?? 'x'}-${i}`} data-testid={`saved-row-${i}`} className="flex items-center gap-2 text-[0.66rem] font-ws-mono text-ws-text-secondary">
-                      <button data-testid={`saved-edit-${i}`} onClick={() => picker.editSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Re-open for editing">✎</button>
-                      <span className="truncate flex-1" title={picker.formatShape(n)}>{n.kind} · {n.label || n.id}{n.frame !== undefined ? ` @${n.frame}` : ''}</span>
-                      <button data-testid={`saved-delete-${i}`} onClick={() => picker.deleteSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Delete">×</button>
-                    </div>
-                  ))}
+                <div data-testid="saved-list" className="flex flex-col gap-1 bg-black/30 rounded-lg p-2 max-h-56 overflow-y-auto">
+                  {groupTracks(saved).map((g) => {
+                    const open = !collapsed.has(g.id); const hidden = picker.hidden.has(g.id)
+                    const kindIcon = g.kind === 'circle' ? '○' : g.kind === 'line' ? '╱' : '▱'
+                    return (
+                      <div key={g.id} data-testid={`track-${g.id}`} className="flex flex-col">
+                        <div className="flex items-center gap-2 text-[0.68rem] font-ws-mono text-ws-text-primary">
+                          <button data-testid={`track-toggle-${g.id}`} onClick={() => setCollapsed((c) => { const n = new Set(c); n.has(g.id) ? n.delete(g.id) : n.add(g.id); return n })} className="ann-btn !px-1.5 !py-0.5" title={open ? 'Collapse' : 'Expand'}>{open ? '▾' : '▸'}</button>
+                          <span className="truncate flex-1" style={hidden ? { opacity: 0.5 } : undefined}>{kindIcon} {g.id} <span className="text-ws-text-tertiary">· {g.rows.length} {g.rows.some((r) => r.n.frame !== undefined) ? 'frame' : 'shape'}{g.rows.length !== 1 ? 's' : ''}</span></span>
+                          <button data-testid={`track-hide-${g.id}`} onClick={() => picker.toggleHidden(g.id)} className="ann-btn !px-1.5 !py-0.5" title={hidden ? 'Show on canvas' : 'Hide on canvas'}>{hidden ? '◌' : '◉'}</button>
+                          <button data-testid={`track-delete-${g.id}`} onClick={() => picker.deleteTrack(g.id)} className="ann-btn !px-1.5 !py-0.5" title="Delete the whole track">×</button>
+                        </div>
+                        {open && g.rows.map(({ n, i }) => (
+                          <div key={`${n.id}-${n.frame ?? 'x'}-${i}`} data-testid={`saved-row-${i}`} className="flex items-center gap-2 pl-6 text-[0.66rem] font-ws-mono text-ws-text-secondary">
+                            <button data-testid={`saved-edit-${i}`} onClick={() => picker.editSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Re-open for editing">✎</button>
+                            <span className="truncate flex-1" title={picker.formatShape(n)}>{n.frame !== undefined ? `frame ${n.frame}` : n.label || n.id}</span>
+                            <button data-testid={`saved-delete-${i}`} onClick={() => picker.deleteSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Delete">×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
