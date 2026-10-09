@@ -198,10 +198,19 @@ export function AnnotatorPanel({
                   <div className="flex gap-2">
                     <button data-testid="copy-all" onClick={picker.copyAll} className="ann-btn">{picker.copied === 'all' ? '✓ copied all' : 'copy all'}</button>
                     {extraActions}
+                    <button data-testid="undo" onClick={picker.undo} disabled={!picker.canUndo} className="ann-btn disabled:opacity-40" title="Undo (⌘Z)">undo</button>
                     <button data-testid="clear-saved" onClick={picker.clearSaved} className="ann-btn">clear</button>
                   </div>
                 </div>
-                <pre data-testid="saved-list" className="text-[0.66rem] text-ws-text-secondary bg-black/30 rounded-lg p-3 overflow-x-auto max-h-40">{saved.map(picker.formatShape).join('\n')}</pre>
+                <div data-testid="saved-list" className="flex flex-col gap-1 bg-black/30 rounded-lg p-2 max-h-48 overflow-y-auto">
+                  {saved.map((n, i) => (
+                    <div key={`${n.id}-${n.frame ?? 'x'}-${i}`} data-testid={`saved-row-${i}`} className="flex items-center gap-2 text-[0.66rem] font-ws-mono text-ws-text-secondary">
+                      <button data-testid={`saved-edit-${i}`} onClick={() => picker.editSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Re-open for editing">✎</button>
+                      <span className="truncate flex-1" title={picker.formatShape(n)}>{n.kind} · {n.label || n.id}{n.frame !== undefined ? ` @${n.frame}` : ''}</span>
+                      <button data-testid={`saved-delete-${i}`} onClick={() => picker.deleteSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Delete">×</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

@@ -53,7 +53,12 @@ export function useShapePicker({
   const [current, setCurrent] = useState<CanvasShape | null>(null)
   const [drawing, setDrawing] = useState(false) // mid multi-point capture
   const [selPt, setSelPt] = useState(0) // selected vertex for line/polygon
-  const [saved, setSaved] = useState<CanvasShape[]>([])
+  const [saved, setSavedRaw] = useState<CanvasShape[]>([])
+  const [history, setHistory] = useState<CanvasShape[][]>([])   // undo stack of saved-list states (tranche 1.3)
+  const setSaved = (next: CanvasShape[] | ((s: CanvasShape[]) => CanvasShape[])) => {
+    setSavedRaw((prev) => { const n = typeof next === 'function' ? next(prev) : next; setHistory((h) => [...h.slice(-49), prev]); return n })
+  }
+  const undo = () => { setHistory((h) => { if (!h.length) return h; const prev = h[h.length - 1]; setSavedRaw(prev); return h.slice(0, -1) }); setCurrent(null); setDrawing(false) }
   const [copied, setCopied] = useState('')
   const [active, setActiveState] = useState(true) // editor pause/resume — when false, no canvas capture
 
@@ -115,6 +120,7 @@ export function useShapePicker({
   // keyboard: Enter finishes a multi-point shape, Esc cancels
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && (e.target as HTMLElement)?.tagName !== 'INPUT') { e.preventDefault(); undo(); return }
       if (!drawing) return
       if (e.key === 'Enter') {
         if (current && current.kind !== 'circle' && current.points.length >= (current.kind === 'line' ? 2 : 3)) finish()
@@ -122,7 +128,8 @@ export function useShapePicker({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [drawing, current])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawing, current, history])
 
   // ── coordinate editors ──
   const setName = (label: string) => current && setCurrent({ ...current, label })
@@ -153,6 +160,9 @@ export function useShapePicker({
   }
   /** Replace the saved list (e.g. resume from an anchors file). */
   const loadSaved = (shapes: CanvasShape[]) => { setSaved(shapes.map((n) => ({ ...n, wip: false }))); setCurrent(null) }
+  /** Re-open a saved shape for editing: it leaves the list and becomes `current` (add puts it back). */
+  const editSaved = (i: number) => { const n = saved[i]; if (!n) return; setSaved((s) => s.filter((_, j) => j !== i)); setCurrent({ ...n }); setDrawing(false); setSelPt(0) }
+  const deleteSaved = (i: number) => setSaved((s) => s.filter((_, j) => j !== i))
 
   const liveShapes: CanvasShape[] = useMemo(
     () => [...saved, ...(current ? [{ ...current, color: highlightColor, wip: true }] : [])],
@@ -175,7 +185,8 @@ export function useShapePicker({
     // capture control
     finish, cancel,
     // editing
-    setName, setCircle, setPoint, addToList, loadSaved,
+    setName, setCircle, setPoint, addToList, loadSaved, editSaved, deleteSaved,
+    undo, canUndo: history.length > 0,
     // export
     copyCurrent, copyAll, clearSaved, formatShape,
   }

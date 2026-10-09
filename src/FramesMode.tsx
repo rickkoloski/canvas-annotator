@@ -1,21 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnnotatorPanel, createSvgSpace, useShapePicker, type CanvasShape } from './lib/canvas-annotator'
 import { ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
-
-/** What `vidfx keyframes` writes next to its sample frames. */
-type Manifest = {
-  version: number; shot: string; source: string; fps: number; frames_total: number
-  canvas: { kind: string; width: number; height: number }
-  frames: { frame: number; t: number; path: string; grid: string; width: number; height: number }[]
-}
-type Anchors = { version: number; canvas: Record<string, unknown>; shapes: CanvasShape[] }
-
-const GHOST = '#8E9678'
+import { buildAnchorsDoc, overlayFor, runEngine, type AnchorsDoc, type Manifest } from './anchors'
 
 /**
- * Video-frame mode (PLAN.md Phase 2): a frame strip over the engine's sampled frames,
- * shapes tagged with the current frame, ghosts of the same id from the nearest other
- * frame, and Save → work/<shot>/anchors.json through the dev-server bridge.
+ * Video-frame mode (PLAN.md Phase 2 + tranche 1): a frame strip over the engine's sampled
+ * frames, shapes tagged with the current frame, ghosts of the nearest keyframe, a loupe,
+ * Save → work/<shot>/anchors.json, an engine console (sample frames, track, crops, render)
+ * through the dev bridge, and a results view.
  */
 export function FramesMode({ shot, drawing, onShotChange }: { shot: string; drawing: boolean; onShotChange: (s: string) => void }) {
   const [manifest, setManifest] = useState<Manifest | null>(null)
@@ -23,18 +15,23 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   const [idx, setIdx] = useState(0)
   const [savedMsg, setSavedMsg] = useState('')
   const [view, setView] = useState<'frames' | 'results'>(new URLSearchParams(window.location.search).get('view') === 'results' ? 'results' : 'frames')
+  const [loupe, setLoupe] = useState(true)
+  const [resultsKey, setResultsKey] = useState(0)
   const svgRef = useRef<SVGSVGElement>(null)
   const base = `/work/${shot}`
 
+  const loadManifest = async () => {
+    const r = await fetch(`${base}/keyframes_sample/manifest.json`)
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}: run \`vidfx keyframes shots/${shot}.yaml\` first`)
+    const m: Manifest = await r.json(); setManifest(m); return m
+  }
   // load the manifest (and an existing anchors.json, to resume) when the shot changes
   useEffect(() => {
     if (!shot) return
     setManifest(null); setError(''); setIdx(0)
-    fetch(`${base}/keyframes_sample/manifest.json`).then(async (r) => {
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}: run \`vidfx keyframes shots/${shot}.yaml\` first`)
-      setManifest(await r.json())
+    loadManifest().then(async () => {
       const a = await fetch(`${base}/anchors.json`)
-      if (a.ok) { const doc: Anchors = await a.json(); picker.loadSaved(doc.shapes) }
+      if (a.ok) { const doc: AnchorsDoc = await a.json(); picker.loadSaved(doc.shapes) }
     }).catch((e) => setError(String(e.message ?? e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shot])
@@ -43,45 +40,33 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   const space = useMemo(() => createSvgSpace(() => svgRef.current), [])
   const picker = useShapePicker({ space, enabled: drawing && view === 'frames', frame: cur?.frame })
 
-  // overlay: this frame's shapes solid, the in-progress shape, and for every id not yet on
-  // this frame a ghost from the nearest other frame (so a corner can be followed)
   const overlay = useMemo(() => {
     if (!cur) return [] as CanvasShape[]
-    const here = picker.saved.filter((s) => s.frame === cur.frame)
-    const ids = new Set(here.map((s) => s.id))
-    const ghosts: CanvasShape[] = []
-    for (const id of new Set(picker.saved.filter((s) => s.frame !== undefined && !ids.has(s.id)).map((s) => s.id))) {
-      const near = picker.saved.filter((s) => s.id === id && s.frame !== undefined)
-        .sort((a, b) => Math.abs((a.frame ?? 0) - cur.frame) - Math.abs((b.frame ?? 0) - cur.frame))[0]
-      if (near) ghosts.push({ ...near, color: GHOST, label: `${near.label} @${near.frame}`, ...(near.kind === 'polygon' ? { open: true } : {}) })
-    }
+    const { here, ghosts } = overlayFor(picker.saved, cur.frame)
     const wip = picker.current ? [{ ...picker.current, color: '#F0B47A', wip: true }] : []
     return [...ghosts, ...here, ...wip]
   }, [picker.saved, picker.current, cur])
   useShapeOverlay(space, overlay)
 
-  // keyboard: [ and ] step frames
+  // keyboard: [ and ] step frames, z toggles the loupe
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!manifest || (e.target as HTMLElement)?.tagName === 'INPUT') return
+      if (!manifest || (e.target as HTMLElement)?.tagName === 'INPUT' || e.metaKey || e.ctrlKey) return
       if (e.key === ']') setIdx((i) => Math.min(manifest.frames.length - 1, i + 1))
       if (e.key === '[') setIdx((i) => Math.max(0, i - 1))
+      if (e.key === 'z') setLoupe((l) => !l)
     }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   }, [manifest])
 
-  const anchorsDoc = (): Anchors | null => manifest ? ({
-    version: 1,
-    canvas: { kind: 'video', width: manifest.canvas.width, height: manifest.canvas.height, fps: manifest.fps, source: manifest.source, shot: manifest.shot },
-    shapes: picker.saved.map(({ wip: _w, color: _c, ...s }) => s),
-  }) : null
   const save = async () => {
-    const doc = anchorsDoc(); if (!doc) return
+    if (!manifest) return
+    const doc = buildAnchorsDoc(manifest, picker.saved)
     const r = await fetch(`${base}/anchors.json`, { method: 'PUT', body: JSON.stringify(doc, null, 2) })
     setSavedMsg(r.ok ? `saved ${doc.shapes.length} shapes → work/${shot}/anchors.json` : `save failed: ${r.status}`)
     window.setTimeout(() => setSavedMsg(''), 4000)
   }
-  const copyJson = () => { const doc = anchorsDoc(); if (doc) navigator.clipboard?.writeText(JSON.stringify(doc, null, 2)) }
+  const copyJson = () => { if (manifest) navigator.clipboard?.writeText(JSON.stringify(buildAnchorsDoc(manifest, picker.saved), null, 2)) }
 
   return (
     <div>
@@ -92,14 +77,16 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
         </label>
         <button data-testid="view-frames" className={`ann-chip ${view === 'frames' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('frames')}>frames</button>
         <button data-testid="view-results" className={`ann-chip ${view === 'results' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('results')}>results</button>
+        <button data-testid="loupe-toggle" className={`ann-chip ${loupe ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setLoupe((l) => !l)} title="z">loupe</button>
         {manifest && cur && <span data-testid="frame-info" className="ml-auto font-ws-mono text-xs text-ws-text-tertiary">frame {cur.frame} · t={cur.t.toFixed(2)}s · {cur.width}×{cur.height} · {picker.saved.filter((s) => s.frame === cur.frame).length} shape(s) here · {picker.saved.length} total · [ ] to step</span>}
       </div>
       {error && <div data-testid="frames-error" className="text-sm text-ws-terracotta-text mb-3">{error}</div>}
 
       {view === 'frames' && manifest && cur && (
         <div style={drawing ? { marginRight: 360 } : undefined}>{/* the floating panel docks in this gutter; it must never cover the canvas */}
-          <div data-testid="canvas" onClick={picker.onCanvasClick} className={`rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
+          <div data-testid="canvas" onClick={picker.onCanvasClick} className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
             <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />
+            {loupe && <Loupe src={`${base}/keyframes_sample/${cur.path}`} svgRef={svgRef} shapes={overlay} />}
           </div>
           <div data-testid="frame-strip" className="flex gap-2 mt-3 overflow-x-auto pb-2">
             {manifest.frames.map((f, i) => {
@@ -114,6 +101,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
             })}
           </div>
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
+          <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => setResultsKey((k) => k + 1)} />
           {drawing && <AnnotatorPanel picker={picker} title={`Annotate · ${shot}`} extraActions={<>
             <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
             <button data-testid="save-anchors" onClick={save} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">save anchors.json</button>
@@ -121,18 +109,101 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
         </div>
       )}
 
-      {view === 'results' && <Results shot={shot} />}
+      {view === 'results' && <>
+        <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => setResultsKey((k) => k + 1)} />
+        <Results key={resultsKey} shot={shot} />
+      </>}
     </div>
   )
 }
 
-/** What the engine produced for this shot: refined keyframes, review stills, the draft. */
+/** 3x magnifier following the pointer over the canvas (tranche 1.4); shapes are drawn into it too. */
+function Loupe({ src, svgRef, shapes }: { src: string; svgRef: React.RefObject<SVGSVGElement>; shapes: CanvasShape[] }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const img = useMemo(() => { const i = new Image(); i.src = src; return i }, [src])
+  const [pos, setPos] = useState<{ x: number; y: number; cx: number; cy: number } | null>(null)
+  const SIZE = 180, ZOOM = 3
+  useEffect(() => {
+    const svg = svgRef.current; if (!svg) return
+    const onMove = (e: MouseEvent) => {
+      const ctm = svg.getScreenCTM(); if (!ctm) return
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
+      const box = svg.getBoundingClientRect()
+      setPos({ x: e.clientX - box.left, y: e.clientY - box.top, cx: p.x, cy: p.y })
+    }
+    const onLeave = () => setPos(null)
+    svg.addEventListener('mousemove', onMove); svg.addEventListener('mouseleave', onLeave)
+    return () => { svg.removeEventListener('mousemove', onMove); svg.removeEventListener('mouseleave', onLeave) }
+  }, [svgRef])
+  useEffect(() => {
+    const c = ref.current; if (!c || !pos || !img.complete) return
+    const ctx = c.getContext('2d'); if (!ctx) return
+    const half = SIZE / ZOOM / 2
+    ctx.imageSmoothingEnabled = false
+    ctx.clearRect(0, 0, SIZE, SIZE)
+    ctx.drawImage(img, pos.cx - half, pos.cy - half, 2 * half, 2 * half, 0, 0, SIZE, SIZE)
+    // shapes near the pointer, in loupe space
+    const tx = (x: number) => (x - (pos.cx - half)) * ZOOM, ty = (y: number) => (y - (pos.cy - half)) * ZOOM
+    for (const s of shapes) {
+      ctx.strokeStyle = s.color ?? '#FF3B81'; ctx.lineWidth = 1.5
+      if (s.kind === 'circle') { ctx.beginPath(); ctx.arc(tx(s.x), ty(s.y), s.r * ZOOM, 0, Math.PI * 2); ctx.stroke() }
+      else { ctx.beginPath(); s.points.forEach((p, i) => (i ? ctx.lineTo(tx(p.x), ty(p.y)) : ctx.moveTo(tx(p.x), ty(p.y)))); if (s.kind === 'polygon' && !s.open) ctx.closePath(); ctx.stroke()
+        for (const p of s.points) { ctx.beginPath(); ctx.arc(tx(p.x), ty(p.y), 3, 0, Math.PI * 2); ctx.stroke() } }
+    }
+    ctx.strokeStyle = '#F0B47A'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(SIZE / 2, 0); ctx.lineTo(SIZE / 2, SIZE); ctx.moveTo(0, SIZE / 2); ctx.lineTo(SIZE, SIZE / 2); ctx.stroke()
+  }, [pos, img, shapes])
+  if (!pos) return null
+  // keep the loupe out from under the pointer: opposite quadrant
+  const left = pos.x > 300 ? 12 : undefined, right = pos.x > 300 ? undefined : 12, top = pos.y > 260 ? 12 : undefined, bottom = pos.y > 260 ? undefined : 12
+  return (
+    <div data-testid="loupe" className="pointer-events-none absolute rounded-lg overflow-hidden border border-ws-terracotta shadow-2xl" style={{ left, right, top, bottom, width: SIZE, height: SIZE }}>
+      <canvas ref={ref} width={SIZE} height={SIZE} className="block" />
+      <div className="absolute bottom-0 left-0 right-0 font-ws-mono text-[0.6rem] text-ws-text-primary bg-black/60 px-1">{Math.round(pos.cx)}, {Math.round(pos.cy)} · {ZOOM}x</div>
+    </div>
+  )
+}
+
+/** Run engine commands from the page through the dev bridge (tranche 1.5, 1.6). */
+function EngineConsole({ shot, manifest, onManifest, onResults }: { shot: string; manifest: Manifest | null; onManifest: () => Promise<Manifest>; onResults: () => void }) {
+  const [out, setOut] = useState(''); const [busy, setBusy] = useState(''); const [frameReq, setFrameReq] = useState('')
+  const run = async (cmd: string, args: string[], after?: () => void | Promise<unknown>) => {
+    if (busy) return
+    setBusy(cmd); setOut('')
+    const code = await runEngine(cmd, shot, args, (s) => setOut((o) => o + s))
+    setBusy('')
+    if (code === 0 && after) await after()
+  }
+  const sampleFrame = () => {
+    const n = Number(frameReq); if (!Number.isInteger(n) || n < 0) return
+    const have = manifest ? manifest.frames.map((f) => f.frame) : []
+    run('keyframes', ['--frames', [...new Set([...have, n])].sort((a, b) => a - b).join(',')], onManifest)
+  }
+  const b = (cmd: string, label: string, args: string[], after?: () => void | Promise<unknown>) => (
+    <button data-testid={`engine-${cmd}`} disabled={!!busy} onClick={() => run(cmd, args, after)} className="ann-btn disabled:opacity-40">{busy === cmd ? `${label}…` : label}</button>
+  )
+  return (
+    <div data-testid="engine-console" className="mt-3 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">engine</span>
+        <input data-testid="sample-frame-input" value={frameReq} onChange={(e) => setFrameReq(e.target.value)} placeholder="frame #" className="font-ws-mono text-xs bg-transparent text-ws-text-primary border border-ws-border-subtle rounded-lg px-2 py-1 w-20 outline-none focus:border-ws-terracotta" />
+        <button data-testid="sample-frame-run" disabled={!!busy} onClick={sampleFrame} className="ann-btn disabled:opacity-40">sample frame</button>
+        {b('track', 'track', [], onResults)}
+        {b('crops', 'crops', ['--frames', '248,434'], onResults)}
+        {b('render', 'render draft', ['--res', '1080', '--stills'], onResults)}
+      </div>
+      {out && <pre data-testid="engine-out" className="text-[0.66rem] font-ws-mono text-ws-text-secondary bg-black/30 rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">{out}</pre>}
+    </div>
+  )
+}
+
+/** What the engine produced for this shot: refined keyframes, crops, review stills, the draft. */
 function Results({ shot }: { shot: string }) {
   const [dbg, setDbg] = useState<string[]>([]); const [stills, setStills] = useState<string[]>([]); const [crops, setCrops] = useState<string[]>([]); const [draft, setDraft] = useState('')
   useEffect(() => {
     const ls = async (p: string) => { const r = await fetch(p); return r.ok ? ((await r.json()) as { name: string }[]).map((e) => e.name).filter((n) => /\.(jpg|png)$/.test(n)) : [] }
     ls(`/work/${shot}/keyframes_debug/`).then(setDbg); ls(`/work/${shot}/stills/`).then(setStills); ls(`/work/${shot}/crops/`).then(setCrops)
-    fetch(`/renders/${shot}_1080p.mp4`, { method: 'HEAD' }).then((r) => setDraft(r.ok ? `/renders/${shot}_1080p.mp4` : ''))
+    fetch(`/renders/${shot}_1080p.mp4`, { method: 'HEAD' }).then((r) => setDraft(r.ok ? `/renders/${shot}_1080p.mp4?v=${Date.now()}` : ''))
   }, [shot])
   const Row = ({ title, dir, names, testid }: { title: string; dir: string; names: string[]; testid: string }) => (
     <section className="mb-5">
@@ -141,13 +212,13 @@ function Results({ shot }: { shot: string }) {
     </section>
   )
   return (
-    <div data-testid="results">
+    <div data-testid="results" className="mt-4">
       <Row title="refined keyframes (red given · green refined)" dir="keyframes_debug" names={dbg} testid="results-debug" />
       <Row title="corner crops at 4x (magenta this track · green the other)" dir="crops" names={crops} testid="results-crops" />
       <Row title="review stills" dir="stills" names={stills} testid="results-stills" />
       <section>
         <h2 className="font-ws-mono text-xs uppercase tracking-widest text-ws-sage mb-2">draft render</h2>
-        {draft ? <video data-testid="results-draft" src={draft} controls className="w-full max-w-[960px] rounded-lg border border-ws-border-subtle" /> : <div className="text-sm text-ws-text-tertiary">no 1080p draft yet (vidfx render --res 1080 --stills)</div>}
+        {draft ? <video data-testid="results-draft" src={draft} controls className="w-full max-w-[960px] rounded-lg border border-ws-border-subtle" /> : <div className="text-sm text-ws-text-tertiary">no 1080p draft yet (render draft above)</div>}
       </section>
     </div>
   )
