@@ -29,7 +29,7 @@ browser, no React in the renderer.
 Annotator copied unchanged into this repo with a standalone demo, including an image
 canvas that proves `createSvgSpace` already handles a raster frame wrapped in an SVG.
 
-### Phase 1: the interchange
+### Phase 1: the interchange (done 2026-10-09)
 Define `anchors.json` (schema in `docs/anchors.schema.md`):
 
 ```json
@@ -50,7 +50,7 @@ header. Shapes without `frame` are timeless, which is today's behaviour.
 Check: re-run `shots/frustration-keyframes.yaml` from an `anchors.json` and get the
 same corners file.
 
-### Phase 2: frames in the page
+### Phase 2: frames in the page (done 2026-10-09; first walk rehearsed 4× clean, see creative/walks)
 - `vidfx keyframes` writes `work/<shot>/keyframes_sample/manifest.json` (frame index,
   time, path, width, height) next to the grid images it already writes.
 - The page gets a **frame strip**: load a manifest, step through frames, the
@@ -63,7 +63,7 @@ same corners file.
 Check: keyframe the frustration clip's monitor by clicking instead of by Claude
 reading grids; compare the refined track's crops.
 
-### Phase 3: round trip
+### Phase 3: round trip (engine side done: `refined.json` is written; page side next)
 - `vidfx track` writes `work/<shot>/refined.json` in the same schema, with the
   refined positions and the per-corner move distance.
 - The page overlays refined (green) against given (red) per frame, the same view the

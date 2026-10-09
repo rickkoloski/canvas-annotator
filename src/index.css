@@ -3,3 +3,9 @@
 @tailwind utilities;
 
 html, body, #root { min-height: 100%; }
+
+/* annotator controls, global so hosts can use them outside the panel (results view, header) */
+.ann-btn{font-family:'DM Mono',monospace;font-size:.7rem;color:#A9A49B;background:rgba(250,247,240,.06);border:1px solid rgba(250,247,240,.12);border-radius:8px;padding:.25rem .45rem;transition:all .2s;cursor:pointer}
+.ann-btn:hover{color:#1a0e07;background:rgba(224,155,88,.85)}
+.ann-chip{padding:.35rem .7rem;border-radius:9999px;font-size:.8rem;font-family:'DM Mono',monospace;transition:all .2s;cursor:pointer;border:1px solid rgba(250,247,240,.12)}
+.glass{background:rgba(11,17,27,.92);backdrop-filter:blur(10px);border:1px solid rgba(250,247,240,.08)}

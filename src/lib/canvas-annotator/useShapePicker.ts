@@ -9,9 +9,10 @@ const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y)
 /** Serialize a shape to a paste-ready record literal. */
 export function formatShape(s: CanvasShape): string {
   const id = slug(s.label || s.id)
-  if (s.kind === 'circle') return `{ kind: 'circle', id: '${id}', label: '${s.label}', x: ${s.x}, y: ${s.y}, r: ${s.r} },`
+  const fr = s.frame === undefined ? '' : `, frame: ${s.frame}`
+  if (s.kind === 'circle') return `{ kind: 'circle', id: '${id}', label: '${s.label}'${fr}, x: ${s.x}, y: ${s.y}, r: ${s.r} },`
   const pts = s.points.map((p) => `{ x: ${p.x}, y: ${p.y} }`).join(', ')
-  return `{ kind: '${s.kind}', id: '${id}', label: '${s.label}', points: [${pts}] },`
+  return `{ kind: '${s.kind}', id: '${id}', label: '${s.label}'${fr}, points: [${pts}] },`
 }
 
 export type ShapePicker = ReturnType<typeof useShapePicker>
@@ -27,6 +28,8 @@ type Options = {
   defaultRadius?: number
   /** Highlight color applied to the live in-progress shape. */
   highlightColor?: string
+  /** When set (video canvases), every shape authored is tagged with this frame. */
+  frame?: number
 }
 
 /**
@@ -44,6 +47,7 @@ export function useShapePicker({
   snapPx = 18,
   defaultRadius = 18,
   highlightColor = '#F0B47A',
+  frame,
 }: Options) {
   const [shapeType, setShapeTypeRaw] = useState<ShapeKind>('circle')
   const [current, setCurrent] = useState<CanvasShape | null>(null)
@@ -76,13 +80,13 @@ export function useShapePicker({
     setCopied('')
 
     if (shapeType === 'circle') {
-      setCurrent({ kind: 'circle', id: 'draft', label: '', x: p.x, y: p.y, r: defaultRadius })
+      setCurrent({ kind: 'circle', id: 'draft', label: '', x: p.x, y: p.y, r: defaultRadius, frame })
       setDrawing(false)
       return
     }
     if (shapeType === 'line') {
       if (!drawing || !current || current.kind !== 'line') {
-        setCurrent({ kind: 'line', id: 'draft', label: '', points: [p] })
+        setCurrent({ kind: 'line', id: 'draft', label: '', points: [p], frame })
         setDrawing(true)
       } else {
         const points = [...current.points, p]
@@ -93,7 +97,7 @@ export function useShapePicker({
     }
     // polygon
     if (!drawing || !current || current.kind !== 'polygon') {
-      setCurrent({ kind: 'polygon', id: 'draft', label: '', points: [p], open: true })
+      setCurrent({ kind: 'polygon', id: 'draft', label: '', points: [p], open: true, frame })
       setDrawing(true)
     } else {
       const pts = current.points
@@ -143,9 +147,12 @@ export function useShapePicker({
   const addToList = () => {
     if (!current) return
     const node = { ...current, id: slug(current.label), label: current.label || slug(current.label) }
-    setSaved((s) => [...s.filter((n) => n.id !== node.id), node])
+    // one shape per (id, frame): a keyframe track is the same id on several frames
+    setSaved((s) => [...s.filter((n) => !(n.id === node.id && n.frame === node.frame)), node])
     setCurrent(null)
   }
+  /** Replace the saved list (e.g. resume from an anchors file). */
+  const loadSaved = (shapes: CanvasShape[]) => { setSaved(shapes.map((n) => ({ ...n, wip: false }))); setCurrent(null) }
 
   const liveShapes: CanvasShape[] = useMemo(
     () => [...saved, ...(current ? [{ ...current, color: highlightColor, wip: true }] : [])],
@@ -168,7 +175,7 @@ export function useShapePicker({
     // capture control
     finish, cancel,
     // editing
-    setName, setCircle, setPoint, addToList,
+    setName, setCircle, setPoint, addToList, loadSaved,
     // export
     copyCurrent, copyAll, clearSaved, formatShape,
   }

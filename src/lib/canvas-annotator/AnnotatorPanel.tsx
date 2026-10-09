@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type React from 'react'
 import type { ShapeKind } from './types'
 import type { ShapePicker } from './useShapePicker'
 import { useDraggable } from './useDraggable'
@@ -46,10 +47,13 @@ export function AnnotatorPanel({
   picker,
   title = 'Annotate Canvas',
   initialPos = { x: typeof window !== 'undefined' ? window.innerWidth - 364 : 24, y: 80 },
+  extraActions,
 }: {
   picker: ShapePicker
   title?: string
   initialPos?: { x: number; y: number }
+  /** Host-supplied buttons rendered beside "copy all" (e.g. save to a file). */
+  extraActions?: React.ReactNode
 }) {
   const [min, setMin] = useState(false)
   const { pos, handleProps } = useDraggable(initialPos)
@@ -64,7 +68,7 @@ export function AnnotatorPanel({
       : `${saved.length} saved`
 
   return (
-    <div style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 50, width: paused ? 220 : 340 }}>
+    <div data-testid="annotator-panel" style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 50, width: paused ? 220 : 340 }}>
       <style>{PANEL_CSS}</style>
       <div className="glass rounded-2xl shadow-2xl overflow-hidden">
         {/* header / drag handle */}
@@ -106,6 +110,7 @@ export function AnnotatorPanel({
                 {SHAPES.map((s) => (
                   <button
                     key={s.type}
+                    data-testid={`shape-${s.type}`}
                     onClick={() => picker.setShapeType(s.type)}
                     className="ann-chip"
                     style={picker.shapeType === s.type
@@ -126,9 +131,9 @@ export function AnnotatorPanel({
                   {current.kind === 'line' ? 'Line' : 'Polygon'}: {current.points.length} point{current.points.length !== 1 ? 's' : ''}
                 </span>
                 {current.points.length >= (current.kind === 'line' ? 2 : 3) && (
-                  <button onClick={picker.finish} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">finish</button>
+                  <button data-testid="shape-finish" onClick={picker.finish} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">finish</button>
                 )}
-                <button onClick={picker.cancel} className="ann-btn">cancel</button>
+                <button data-testid="shape-cancel" onClick={picker.cancel} className="ann-btn">cancel</button>
               </div>
             )}
 
@@ -138,6 +143,7 @@ export function AnnotatorPanel({
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-ws-text-tertiary">Name</span>
                   <input
+                    data-testid="shape-name"
                     value={current.label}
                     onChange={(e) => picker.setName(e.target.value)}
                     placeholder="e.g. left-frontal-cluster"
@@ -159,6 +165,7 @@ export function AnnotatorPanel({
                       {current.points.map((_, i) => (
                         <button
                           key={i}
+                          data-testid={`point-${i}`}
                           onClick={() => picker.setSelPt(i)}
                           className="px-2 py-1 rounded-lg text-xs font-ws-mono"
                           style={picker.selPt === i ? { background: 'rgba(224,155,88,.85)', color: '#1a0e07' } : { background: 'rgba(250,247,240,.06)', color: '#A9A49B' }}
@@ -176,10 +183,10 @@ export function AnnotatorPanel({
                   </div>
                 )}
 
-                <button onClick={picker.copyCurrent} className="btn btn-primary !py-2.5 text-sm w-full">
+                <button data-testid="shape-copy" onClick={picker.copyCurrent} className="btn btn-primary !py-2.5 text-sm w-full">
                   {picker.copied === 'node' ? '✓ Copied to clipboard' : 'Copy shape to clipboard'}
                 </button>
-                <button onClick={picker.addToList} className="ann-btn self-start">+ add to group list (for batching)</button>
+                <button data-testid="shape-add" onClick={picker.addToList} className="ann-btn self-start">+ add to group list (for batching)</button>
               </div>
             )}
 
@@ -189,11 +196,12 @@ export function AnnotatorPanel({
                 <div className="flex items-center justify-between">
                   <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-text-tertiary">Saved ({saved.length})</span>
                   <div className="flex gap-2">
-                    <button onClick={picker.copyAll} className="ann-btn">{picker.copied === 'all' ? '✓ copied all' : 'copy all'}</button>
-                    <button onClick={picker.clearSaved} className="ann-btn">clear</button>
+                    <button data-testid="copy-all" onClick={picker.copyAll} className="ann-btn">{picker.copied === 'all' ? '✓ copied all' : 'copy all'}</button>
+                    {extraActions}
+                    <button data-testid="clear-saved" onClick={picker.clearSaved} className="ann-btn">clear</button>
                   </div>
                 </div>
-                <pre className="text-[0.66rem] text-ws-text-secondary bg-black/30 rounded-lg p-3 overflow-x-auto max-h-40">{saved.map(picker.formatShape).join('\n')}</pre>
+                <pre data-testid="saved-list" className="text-[0.66rem] text-ws-text-secondary bg-black/30 rounded-lg p-3 overflow-x-auto max-h-40">{saved.map(picker.formatShape).join('\n')}</pre>
               </div>
             )}
           </div>
