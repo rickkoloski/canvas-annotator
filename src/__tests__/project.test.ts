@@ -26,3 +26,28 @@ describe('project.json (A1)', () => {
     expect(p.renders).toBe('/projects/laptop-demo/renders'); expect(p.projectJson).toBe('/projects/laptop-demo/project.json')
   })
 })
+
+import { pushRecent, withShot, pageUrl } from '../project'
+import { dirtyKey } from '../FramesMode'
+import { emptyBeats } from '../beats'
+
+describe('app frame A2 helpers', () => {
+  it('pushRecent puts the name first, dedupes, keeps five', () => {
+    expect(pushRecent(['a', 'b'], 'b')).toEqual(['b', 'a'])
+    expect(pushRecent(['a', 'b', 'c', 'd', 'e'], 'f')).toEqual(['f', 'a', 'b', 'c', 'd'])
+  })
+  it('withShot records the shot once and the view', () => {
+    const p = withShot(emptyProject('x'), 's1', 'beats')
+    expect(p.shots).toEqual(['s1']); expect(p.recent).toEqual({ shot: 's1', view: 'beats' })
+    expect(withShot(p, 's1').shots).toEqual(['s1'])
+  })
+  it('pageUrl builds the query', () => {
+    expect(pageUrl(null)).toBe('/'); expect(pageUrl('p')).toBe('/?project=p'); expect(pageUrl('p', 's', 'beats')).toBe('/?project=p&shot=s&view=beats'); expect(pageUrl(null, 's', 'frames')).toBe('/?shot=s')
+  })
+  it('dirtyKey ignores UI-only fields and changes with content', () => {
+    const a = dirtyKey([{ kind: 'circle', id: 'c', label: 'c', x: 1, y: 2, r: 3, wip: true, color: '#fff' }], emptyBeats(), {}, [], [])
+    const b = dirtyKey([{ kind: 'circle', id: 'c', label: 'c', x: 1, y: 2, r: 3 }], emptyBeats(), {}, [], [])
+    const c = dirtyKey([{ kind: 'circle', id: 'c', label: 'c', x: 1, y: 9, r: 3 }], emptyBeats(), {}, [], [])
+    expect(a).toBe(b); expect(c).not.toBe(b)
+  })
+})

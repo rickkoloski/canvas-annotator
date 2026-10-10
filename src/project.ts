@@ -77,3 +77,37 @@ export async function saveProject(doc: ProjectDoc): Promise<ProjectDoc> {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
   return next
 }
+
+/** Save As (Camtasia: a copy of the package): copies project.json, media/ and shots/ to projects/<to>/. */
+export async function saveProjectAs(from: string, to: string): Promise<ProjectDoc> {
+  const r = await fetch(`${bridgePaths(from).root}/save-as`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to }) })
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+  return validateProject(await r.json())
+}
+
+/** Record the shot the page is on; the shot is added to `shots` if new. */
+export function withShot(doc: ProjectDoc, shot: string, view?: string): ProjectDoc {
+  const shots = shot && !doc.shots.includes(shot) ? [...doc.shots, shot] : doc.shots
+  return { ...doc, shots, recent: { ...(shot ? { shot } : {}), ...(view ? { view } : {}) } }
+}
+
+// ── Open Recent (per browser; localStorage is a convenience, never the truth) ──
+const RECENT_KEY = 'canvas-annotator.recentProjects'
+export function pushRecent(list: string[], name: string, max = 5): string[] {
+  return [name, ...list.filter((n) => n !== name)].slice(0, max)
+}
+export function readRecent(): string[] {
+  try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] } catch { return [] }
+}
+export function rememberRecent(name: string) {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(pushRecent(readRecent(), name))) } catch { /* private window, blocked storage */ }
+}
+
+/** The page URL for a project (and shot); `null` project = the legacy page. */
+export function pageUrl(project: string | null, shot?: string, view?: string): string {
+  const q = new URLSearchParams()
+  if (project) q.set('project', project)
+  if (shot) q.set('shot', shot)
+  if (view && view !== 'frames') q.set('view', view)
+  const s = q.toString(); return s ? `/?${s}` : '/'
+}

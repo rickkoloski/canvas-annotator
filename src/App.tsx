@@ -1,4 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AppFrame } from './AppFrame'
+import { loadProject, rememberRecent, saveProject, withShot, type ProjectDoc } from './project'
 import { AnnotatorPanel, createSvgSpace, useShapePicker } from './lib/canvas-annotator'
 import { DemoVectorCanvas, ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
 import { FramesMode } from './FramesMode'
@@ -11,6 +13,20 @@ export default function App() {
   const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') ? 'frames' : 'vector'))
   const [shot, setShot] = useState(params.get('shot') ?? '')
   const project = params.get('project') ?? undefined   // app frame A1: shots live in projects/<name>/; absent = legacy video-fx mounts
+  // app frame A2: the project document, the unsaved dot, one Save for project.json + the shot's anchors
+  const [proj, setProj] = useState<ProjectDoc | null>(null); const [projError, setProjError] = useState('')
+  const [shotDirty, setShotDirty] = useState(false); const [saveTick, setSaveTick] = useState(0); const [view, setView] = useState('frames')
+  useEffect(() => {
+    if (!project) return
+    loadProject(project).then((p) => { setProj(p); rememberRecent(p.name) }).catch((e) => setProjError(`cannot open project '${project}': ${String(e.message ?? e)}`))
+  }, [project])
+  const projDirty = !!proj && !!shot && (proj.recent?.shot !== shot || !proj.shots.includes(shot))
+  const onSave = useCallback(async () => {
+    let ok = true
+    if (proj) { try { setProj(await saveProject(withShot(proj, shot, view))) } catch (e) { setProjError(String((e as Error).message ?? e)); ok = false } }
+    if (shot && mode === 'frames') setSaveTick((t) => t + 1)
+    return ok
+  }, [proj, shot, view, mode])
   const [drawing, setDrawing] = useState(true)
   const [img, setImg] = useState<{ src: string; w: number; h: number } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -34,6 +50,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen p-6 max-w-[1400px] mx-auto">
+      <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} />
       <header className="flex flex-wrap items-center gap-3 mb-4">
         <h1 className="font-ws-mono text-ws-terracotta-text text-lg">canvas-annotator</h1>
         <span className="text-ws-text-tertiary text-sm">click a canvas to drop named anchors in its own units; copy them out</span>
@@ -49,7 +66,7 @@ export default function App() {
       </header>
 
       {mode === 'frames' ? (
-        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} />
+        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={proj ? proj.name : undefined} saveTick={saveTick} onDirty={setShotDirty} onView={setView} />
       ) : (
         <>
           <div data-testid="canvas" onClick={picker.onCanvasClick} className={`rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>

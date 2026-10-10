@@ -6,13 +6,25 @@ import { BeatsTab, MarkerStrip } from './BeatsMode'
 import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
 import { bridgePaths } from './project'
 
+/** What the unsaved dot compares: shapes without UI-only fields, beats, meta, notes, decisions. */
+export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes: string[], decisions: unknown[]): string {
+  return JSON.stringify([shapes.map(({ wip: _w, color: _c, ...s }) => s), beats, meta, notes, decisions])
+}
+
 /**
  * Video-frame mode (PLAN.md Phase 2 + tranche 1): a frame strip over the engine's sampled
  * frames, shapes tagged with the current frame, ghosts of the nearest keyframe, a loupe,
  * Save → work/<shot>/anchors.json, an engine console (sample frames, track, crops, render)
  * through the dev bridge, and a results view.
  */
-export function FramesMode({ shot, drawing, onShotChange, project }: { shot: string; drawing: boolean; onShotChange: (s: string) => void; project?: string }) {
+export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView }: {
+  shot: string; drawing: boolean; onShotChange: (s: string) => void; project?: string
+  /** A2: bumped by the frame's Save (File › Save, ⌘S); the shot's anchors.json is written. */
+  saveTick?: number
+  /** A2: reports whether the shot's document differs from what was last loaded or saved. */
+  onDirty?: (dirty: boolean) => void
+  onView?: (view: string) => void
+}) {
   const [manifest, setManifest] = useState<Manifest | null>(null)
   const [error, setError] = useState('')
   const [idx, setIdx] = useState(0)
@@ -47,6 +59,10 @@ export function FramesMode({ shot, drawing, onShotChange, project }: { shot: str
       if (a.ok) {
         const doc = (await a.json()) as AnchorsDoc & { beats?: Beats; meta?: Meta; notes?: string[]; decisions?: { date: string; decision: string; by: string }[] }
         picker.loadSaved(doc.shapes); setBeats({ ...emptyBeats(), ...(doc.beats ?? {}) }); setMeta(doc.meta ?? {}); setNotes(doc.notes ?? []); setDecisions(doc.decisions ?? [])
+        setSavedKey(dirtyKey(doc.shapes, doc.beats ?? emptyBeats(), doc.meta ?? {}, doc.notes ?? [], doc.decisions ?? []))
+      } else {
+        picker.loadSaved([]); setBeats(emptyBeats()); setMeta({}); setNotes([]); setDecisions([])
+        setSavedKey(dirtyKey([], emptyBeats(), {}, [], []))
       }
       await loadRefined()
     }).catch((e) => setError(String(e.message ?? e)))
@@ -84,8 +100,16 @@ export function FramesMode({ shot, drawing, onShotChange, project }: { shot: str
     const r = await fetch(`${base}/anchors.json`, { method: 'PUT', body: JSON.stringify(doc, null, 2) })
     setSavedMsg(r.ok ? `saved ${doc.shapes.length} shapes, ${beats.rows.length} beats → work/${shot}/anchors.json` : `save failed: ${r.status}`)
     window.setTimeout(() => setSavedMsg(''), 4000)
+    if (r.ok) setSavedKey(dirtyKey(picker.saved, beats, meta, notes, decisions))
     return r.ok
   }
+  // A2: unsaved dot = the document differs from what was loaded or last saved; File › Save bumps saveTick
+  const [savedKey, setSavedKey] = useState('')
+  const curKey = dirtyKey(picker.saved, beats, meta, notes, decisions)
+  useEffect(() => { onDirty?.(!!manifest && curKey !== savedKey) }, [curKey, savedKey, manifest, onDirty])
+  const lastTick = useRef(saveTick ?? 0)
+  useEffect(() => { if ((saveTick ?? 0) > lastTick.current) { lastTick.current = saveTick ?? 0; void save() } }, [saveTick])  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onView?.(view) }, [view, onView])
   const copyJson = () => { const d = fullDoc(); if (d) navigator.clipboard?.writeText(JSON.stringify(d, null, 2)) }
   const trackerIds = [...new Set(picker.saved.map((sh) => sh.id))]
   // T2: the mark-beat target; a click on a tracker's name in the panel selects it. Falls back to the first tracker.

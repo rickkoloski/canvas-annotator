@@ -20,6 +20,7 @@ import { spawn } from 'node:child_process'
  *   POST /projects {name, canvas}  create the directory + project.json (409 if it exists)
  *   GET  /projects/<name>/**       files and listings as above; PUT writable: project.json, work/**\/anchors.json, shots/*.animation.md
  *   POST /vidfx/run {project}      runs the command on projects/<name>/shots/<shot>.yaml
+ *   POST /projects/<name>/save-as {to}   copies project.json (renamed), media/, shots/ to projects/<to>/ (A2, Save As…)
  */
 function vidfxBridge(): Plugin {
   const ROOT = (process.env.VIDFX_ROOT ?? path.join(os.homedir(), 'src/ops/creative/video-fx')).replace(/^~/, os.homedir())
@@ -87,6 +88,24 @@ function vidfxBridge(): Plugin {
             res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
           }
           res.statusCode = 405; return res.end()
+        }
+
+        const saveAs = /^\/projects\/([A-Za-z0-9][\w.-]{0,63})\/save-as$/.exec(url)
+        if (saveAs) {
+          if (req.method !== 'POST') { res.statusCode = 405; return res.end() }
+          const from = saveAs[1]; const src = readProject(from)
+          if (!src) { res.statusCode = 404; return res.end('unknown project') }
+          let body: { to?: string }
+          try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+          const to = body.to
+          if (!to || !SAFE_NAME.test(to) || to === from) { res.statusCode = 400; return res.end('bad target name') }
+          const dst = path.join(PROJECTS, to)
+          if (fs.existsSync(dst)) { res.statusCode = 409; return res.end('project exists') }
+          for (const d of ['media', 'shots', 'work', 'renders']) fs.mkdirSync(path.join(dst, d), { recursive: true })
+          for (const d of ['media', 'shots']) { const sd = path.join(PROJECTS, from, d); if (fs.existsSync(sd)) fs.cpSync(sd, path.join(dst, d), { recursive: true }) }
+          const doc = { ...src, name: to, created: new Date().toISOString(), modified: new Date().toISOString() }
+          fs.writeFileSync(path.join(dst, 'project.json'), JSON.stringify(doc, null, 2))
+          res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
         }
 
         // ── files ──
