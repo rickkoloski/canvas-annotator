@@ -35,7 +35,7 @@ function vidfxBridge(): Plugin {
   const readProject = (name: string) => { try { return JSON.parse(fs.readFileSync(path.join(PROJECTS, name, 'project.json'), 'utf8')) } catch { return null } }
   const TYPES: Record<string, string> = { '.json': 'application/json', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.yaml': 'text/yaml', '.npy': 'application/octet-stream', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.gif': 'image/gif', '.webp': 'image/webp', '.md': 'text/markdown' }
-  const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills', 'script'])
+  const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills', 'script', 'effects'])
   const SAFE_ARG = /^[-\w.,=:/]+$/   // no spaces, no shell metacharacters; spawn without a shell anyway
   const SAFE_SHOT = /^[\w.-]+$/
   const readBody = (req: import('node:http').IncomingMessage) => new Promise<string>((resolve) => { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => resolve(b)) })

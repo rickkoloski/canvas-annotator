@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnnotatorPanel, createSvgSpace, useShapePicker, type CanvasShape } from './lib/canvas-annotator'
 import { ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
-import { acceptRefined, buildAnchorsDoc, hitVertex, moveVertex, overlayFor, refinedOverlay, runEngine, type AnchorsDoc, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
+import { acceptRefined, buildAnchorsDoc, editEffects, hitVertex, listEffects, moveVertex, overlayFor, refinedOverlay, runEngine, type AnchorsDoc, type EffectRow, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
 import { BeatsTab, MarkerStrip } from './BeatsMode'
 import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
-import { bridgePaths } from './project'
+import { bridgePaths, type ProjectDoc } from './project'
 
 /** What the unsaved dot compares: shapes without UI-only fields, beats, meta, notes, decisions. */
 export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes: string[], decisions: unknown[]): string {
@@ -17,13 +17,15 @@ export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes:
  * Save → work/<shot>/anchors.json, an engine console (sample frames, track, crops, render)
  * through the dev bridge, and a results view.
  */
-export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView }: {
+export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView, projectDoc }: {
   shot: string; drawing: boolean; onShotChange: (s: string) => void; project?: string
   /** A2: bumped by the frame's Save (File › Save, ⌘S); the shot's anchors.json is written. */
   saveTick?: number
   /** A2: reports whether the shot's document differs from what was last loaded or saved. */
   onDirty?: (dirty: boolean) => void
   onView?: (view: string) => void
+  /** A5: the project document, for the Media Bin's items dropped onto the canvas. */
+  projectDoc?: ProjectDoc | null
 }) {
   const [manifest, setManifest] = useState<Manifest | null>(null)
   const [error, setError] = useState('')
@@ -40,6 +42,24 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   const dragged = useRef(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const paths = bridgePaths(project); const base = paths.work(shot)
+  // ── A5: effects from the shot file; a Media Bin item dropped on the canvas becomes an overlay ──
+  const [effects, setEffects] = useState<EffectRow[]>([])
+  const [effectsBusy, setEffectsBusy] = useState(false)
+  const loadEffects = async () => { if (shot) setEffects(await listEffects(shot, project)) }
+  const effectEdit = async (op: 'add' | 'set' | 'remove', args: string[]) => {
+    if (effectsBusy) return; setEffectsBusy(true)
+    const code = await editEffects(shot, op, args, project); await loadEffects(); setEffectsBusy(false)
+    setSavedMsg(code === 0 ? `shot file updated (${op} ${args[0] ?? ''})` : `effects ${op} failed (exit ${code})`); window.setTimeout(() => setSavedMsg(''), 4000)
+  }
+  const mediaUrl = (m: { id: string; file: string; linked?: boolean }) => (m.linked ? `${paths.root}/media-file/${encodeURIComponent(m.id)}` : `${paths.media}/${encodeURIComponent(m.file.split('/').pop() ?? m.file)}`)
+  const onDropMedia = async (e: React.DragEvent) => {
+    const id = e.dataTransfer.getData('application/x-media-id'); if (!id || !projectDoc || !cur) return
+    e.preventDefault()
+    const m = projectDoc.media.find((x) => x.id === id); if (!m) return
+    const p = space.screenToCanvas(e.clientX, e.clientY); if (!p) return
+    const image = m.linked ? m.file : `../media/${m.file.split('/').pop()}`
+    await effectEdit('add', ['kind=overlay', `image=${image}`, `x=${(p.x / cur.width).toFixed(3)}`, `y=${(p.y / cur.height).toFixed(3)}`, 'width=0.3', `start=${cur.t.toFixed(2)}`, 'tracker=none'])
+  }
 
   const loadRefined = async () => {
     const r = await fetch(`${base}/refined.json?v=${Date.now()}`)
@@ -66,6 +86,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
       }
       await loadRefined()
     }).catch((e) => setError(String(e.message ?? e)))
+    void loadEffects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shot, project])   // A4: the project decides the work path
 
@@ -167,8 +188,14 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
 
       {view === 'frames' && manifest && cur && (
         <div style={drawing ? { marginRight: 360 } : undefined}>{/* the floating panel docks in this gutter; it must never cover the canvas */}
-          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
+          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.includes('application/x-media-id')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
+            className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
             <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />
+            {/* A5: static overlays previewed in place (tracked ones show in the engine's stills) */}
+            {projectDoc && effects.filter((e) => e.kind === 'overlay' && !e.tracker && typeof e.image === 'string' && cur.t >= Number(e.start ?? 0) - 1e-6 && (e.end == null || cur.t <= Number(e.end))).map((e) => {
+              const name = String(e.image).split('/').pop(); const m = projectDoc.media.find((x) => x.file.split('/').pop() === name)
+              return m ? <img key={e.i} data-testid={`overlay-preview-${e.i}`} src={mediaUrl(m)} alt="" className="absolute pointer-events-none" style={{ left: `${Number(e.x ?? 0.5) * 100}%`, top: `${Number(e.y ?? 0.5) * 100}%`, width: `${Number(e.width ?? 0.3) * 100}%`, transform: 'translate(-50%, -50%)' }} /> : null
+            })}
             {loupe && <Loupe src={`${base}/keyframes_sample/${cur.path}`} svgRef={svgRef} shapes={overlay} />}
           </div>
           <div data-testid="frame-strip" className="flex gap-2 mt-3 overflow-x-auto pb-2">
@@ -186,6 +213,25 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
           <MarkerStrip beats={beats} setBeats={setBeats} duration={duration} sampleTimes={manifest.frames.map((f) => f.t)} currentT={cur.t} lanes={laneNames} trackerIds={trackerIds}
             target={markTarget} setTarget={setPickedTarget}
             onMark={(lane, target) => setBeats(markBeat({ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }, cur.t, lane, target).beats)} />
+          {effects.length > 0 && (
+            <div data-testid="effects-strip" className="mt-2 flex flex-col gap-1 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
+              <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">effects <span className="text-ws-text-tertiary normal-case tracking-normal">· from the shot file · drop a Media Bin item on the canvas to add an overlay</span></span>
+              {effects.map((e) => (
+                <div key={e.i} data-testid={`effect-${e.i}`} className="flex flex-wrap items-center gap-2 font-ws-mono text-xs text-ws-text-secondary">
+                  <span className="text-ws-text-primary">{e.i} · {e.kind}</span>
+                  <span className="truncate max-w-[260px]">{e.kind === 'overlay' ? String(e.image ?? '').split('/').pop() : e.kind === 'bubble' ? `"${String(e.text ?? '')}"` : e.kind === 'flyout' || e.kind === 'pin' ? String(e.ui ?? '').split('/').pop() : ''}</span>
+                  <label className="flex items-center gap-1">attach to
+                    <select data-testid={`effect-tracker-${e.i}`} value={e.tracker ?? ''} disabled={effectsBusy} onChange={(ev) => void effectEdit('set', [String(e.i), `tracker=${ev.target.value || 'none'}`])} className="ann-btn">
+                      <option value="">none (static)</option>
+                      {trackerIds.map((id) => <option key={id} value={id}>{id}</option>)}
+                    </select>
+                  </label>
+                  <span className="text-ws-text-tertiary">start {String(e.start ?? 0)}{e.end != null ? ` · end ${String(e.end)}` : e.dur != null ? ` · dur ${String(e.dur)}` : ''}</span>
+                  <button data-testid={`effect-remove-${e.i}`} disabled={effectsBusy} onClick={() => void effectEdit('remove', [String(e.i)])} className="ann-btn !px-1.5 !py-0.5 ml-auto" title="Remove from the shot file">×</button>
+                </div>
+              ))}
+            </div>
+          )}
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
           {refined.length > 0 && (
             <div data-testid="refine-bar" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>

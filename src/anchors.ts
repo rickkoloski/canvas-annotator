@@ -85,3 +85,17 @@ export function moveVertex(s: CanvasShape, point: number, x: number, y: number):
   if (s.kind === 'circle') return { ...s, x: Math.round(x), y: Math.round(y) }
   return { ...s, points: s.points.map((p, i) => (i === point ? { x: Math.round(x), y: Math.round(y) } : p)) }
 }
+
+
+/** A5: the shot file's effects list, read and edited through `vidfx effects` so the YAML stays the truth. */
+export type EffectRow = { i: number; kind: string; tracker: string | null; [k: string]: unknown }
+export async function listEffects(shot: string, project?: string): Promise<EffectRow[]> {
+  let out = ''
+  const code = await runEngine('effects', shot, ['list'], (s) => { out += s }, project)
+  if (code !== 0) return []
+  const a = out.indexOf('['), b = out.lastIndexOf(']')
+  try { return a >= 0 && b > a ? (JSON.parse(out.slice(a, b + 1)) as EffectRow[]) : [] } catch { return [] }
+}
+export async function editEffects(shot: string, op: 'add' | 'set' | 'remove', args: string[], project?: string): Promise<number> {
+  return runEngine('effects', shot, [op, ...args], () => {}, project)
+}

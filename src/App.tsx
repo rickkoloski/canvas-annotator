@@ -70,7 +70,7 @@ export default function App() {
       </header>
 
       {mode === 'frames' ? (
-        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} saveTick={saveTick} onDirty={setShotDirty} onView={setView} />
+        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} projectDoc={proj} saveTick={saveTick} onDirty={setShotDirty} onView={setView} />
       ) : (
         <>
           <div data-testid="canvas" onClick={picker.onCanvasClick} className={`rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
