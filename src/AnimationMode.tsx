@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { bridgePaths, type ProjectDoc } from './project'
 import { addFromLibrary } from './media'
+import { Select } from './lib/ui/Select'
 
 /**
  * Animation mode (app frame A5b): an animation is projects/<name>/animations/<anim>/ (a Remotion entry file +
@@ -101,7 +102,7 @@ export function AnimationMode({ projectDoc, anim, onProject }: { projectDoc: Pro
             <label>width <input className={`${inp} w-14`} type="number" step="0.01" value={l.width} onChange={(e) => void upd(i, { width: Number(e.target.value) })} /></label>
             <label>start <input className={`${inp} w-14`} type="number" step="0.1" value={l.start} onChange={(e) => void upd(i, { start: Number(e.target.value) })} /></label>
             <label>end <input className={`${inp} w-14`} type="number" step="0.1" value={l.end ?? ''} placeholder="∞" onChange={(e) => void upd(i, { end: e.target.value === '' ? null : Number(e.target.value) })} /></label>
-            <label>in <select className={inp} value={l.in ?? 'spring'} onChange={(e) => void upd(i, { in: e.target.value })}>{['spring', 'fade', 'none'].map((v) => <option key={v}>{v}</option>)}</select></label>
+            <label className="flex items-center gap-1">in <Select testid={`layer-in-${i}`} value={l.in ?? 'spring'} onChange={(v) => void upd(i, { in: v })} options={['spring', 'fade', 'none'].map((v) => ({ value: v, label: v }))} /></label>
             <button data-testid={`layer-remove-${i}`} onClick={() => props && void save({ ...props, layers: props.layers.filter((_, k) => k !== i) })} className="ann-btn !px-1.5 !py-0.5 ml-auto">×</button>
           </div>
         ))}

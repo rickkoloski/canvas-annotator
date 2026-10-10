@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createAnimation, createProject, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
+import { Select } from './lib/ui/Select'
 
 /**
  * App frame A2 (plans/2026-10-10_app-frame.md): the File menu and project bar, with Camtasia's names:
@@ -65,18 +66,14 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim }: {
       {project && <span className="font-ws-mono text-[0.65rem] text-ws-text-tertiary">{project.canvas.width}×{project.canvas.height} · {project.canvas.fps} fps · {project.media.length} media · {project.shots.length} shot{project.shots.length === 1 ? '' : 's'}</span>}
       {project && (project.animations?.length ?? 0) > 0 && (
         <label className="flex items-center gap-1 font-ws-mono text-xs text-ws-text-tertiary">animation
-          <select data-testid="anim-select" value={anim && project.animations?.includes(anim) ? anim : ''} onChange={(e) => guarded(() => go(e.target.value ? pageUrl(project.name, undefined, undefined, e.target.value) : pageUrl(project.name, shot, view)))} className="ann-btn">
-            <option value="">(none)</option>
-            {project.animations?.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <Select testid="anim-select" value={anim && project.animations?.includes(anim) ? anim : ''} onChange={(v) => guarded(() => go(v ? pageUrl(project.name, undefined, undefined, v) : pageUrl(project.name, shot, view)))}
+            options={[{ value: '', label: '(none)' }, ...(project.animations ?? []).map((a) => ({ value: a, label: a }))]} />
         </label>
       )}
       {project && project.shots.length > 0 && (
         <label className="flex items-center gap-1 font-ws-mono text-xs text-ws-text-tertiary">shot
-          <select data-testid="shot-select" value={project.shots.includes(shot) ? shot : ''} onChange={(e) => guarded(() => go(pageUrl(project.name, e.target.value, view)))} className="ann-btn">
-            <option value="">{shot && !project.shots.includes(shot) ? shot : '(choose)'}</option>
-            {project.shots.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <Select testid="shot-select" value={project.shots.includes(shot) ? shot : ''} onChange={(v) => guarded(() => go(pageUrl(project.name, v, view)))}
+            options={[{ value: '', label: shot && !project.shots.includes(shot) ? shot : '(choose)' }, ...project.shots.map((s) => ({ value: s, label: s }))]} />
         </label>
       )}
       {msg && <span data-testid="frame-status" className="font-ws-mono text-xs text-ws-sage">{msg}</span>}

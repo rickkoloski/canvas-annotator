@@ -6,6 +6,7 @@ import { BeatsTab, MarkerStrip } from './BeatsMode'
 import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
 import { bridgePaths, type ProjectDoc } from './project'
 import { addFromLibrary } from './media'
+import { Select } from './lib/ui/Select'
 
 /** What the unsaved dot compares: shapes without UI-only fields, beats, meta, notes, decisions. */
 export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes: string[], decisions: unknown[]): string {
@@ -227,10 +228,8 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
                   <span className="text-ws-text-primary">{e.i} · {e.kind}</span>
                   <span className="truncate max-w-[260px]">{e.kind === 'overlay' ? String(e.image ?? '').split('/').pop() : e.kind === 'bubble' ? `"${String(e.text ?? '')}"` : e.kind === 'flyout' || e.kind === 'pin' ? String(e.ui ?? '').split('/').pop() : ''}</span>
                   <label className="flex items-center gap-1">attach to
-                    <select data-testid={`effect-tracker-${e.i}`} value={e.tracker ?? ''} disabled={effectsBusy} onChange={(ev) => void effectEdit('set', [String(e.i), `tracker=${ev.target.value || 'none'}`])} className="ann-btn">
-                      <option value="">none (static)</option>
-                      {trackerIds.map((id) => <option key={id} value={id}>{id}</option>)}
-                    </select>
+                    <Select testid={`effect-tracker-${e.i}`} value={e.tracker ?? ''} disabled={effectsBusy} onChange={(v) => void effectEdit('set', [String(e.i), `tracker=${v || 'none'}`])}
+                      options={[{ value: '', label: 'none (static)' }, ...trackerIds.map((id) => ({ value: id, label: id }))]} />
                   </label>
                   <span className="text-ws-text-tertiary">start {String(e.start ?? 0)}{e.end != null ? ` · end ${String(e.end)}` : e.dur != null ? ` · dur ${String(e.dur)}` : ''}</span>
                   <button data-testid={`effect-remove-${e.i}`} disabled={effectsBusy} onClick={() => void effectEdit('remove', [String(e.i)])} className="ann-btn !px-1.5 !py-0.5 ml-auto" title="Remove from the shot file">×</button>

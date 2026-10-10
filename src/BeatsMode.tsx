@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { markBeat, swimlanes, type Beats, type BeatRow, type Meta } from './beats'
 import { runEngine } from './anchors'
 import { bridgePaths } from './project'
+import { Select } from './lib/ui/Select'
 
 /** Beats tab (tranche 4): lanes, the marker table with swimlanes, held spans, meta/notes/decisions,
  * and the Animation Script export (written by the engine's `vidfx script` through the bridge). */
@@ -76,9 +77,9 @@ export function BeatsTab({ shot, project, beats, setBeats, meta, setMeta, notes,
         <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">held open</span>
         {beats.held.map((h, i) => (
           <span key={i} data-testid={`held-${i}`} className="flex items-center gap-1 text-xs font-ws-mono">
-            <select value={h.lane} onChange={(e) => updHeld(i, { lane: e.target.value })} className={inp}>{lanes.map((l) => <option key={l}>{l}</option>)}</select>
-            <select value={h.from} onChange={(e) => updHeld(i, { from: e.target.value })} className={inp}>{rows.map((r) => <option key={r.n}>{r.n}</option>)}</select>→
-            <select value={h.to} onChange={(e) => updHeld(i, { to: e.target.value })} className={inp}>{rows.map((r) => <option key={r.n}>{r.n}</option>)}</select>
+            <Select testid={`held-${i}-lane`} value={h.lane} onChange={(v) => updHeld(i, { lane: v })} options={lanes.map((l) => ({ value: l, label: l }))} />
+            <Select testid={`held-${i}-from`} value={h.from} onChange={(v) => updHeld(i, { from: v })} options={rows.map((r) => ({ value: r.n, label: r.n }))} />→
+            <Select testid={`held-${i}-to`} value={h.to} onChange={(v) => updHeld(i, { to: v })} options={rows.map((r) => ({ value: r.n, label: r.n }))} />
             <button onClick={() => setBeats({ ...beats, held: beats.held.filter((_, j) => j !== i) })} className="ann-btn !px-1.5 !py-0.5">×</button>
           </span>
         ))}
@@ -92,7 +93,7 @@ export function BeatsTab({ shot, project, beats, setBeats, meta, setMeta, notes,
           <textarea data-testid="meta-notes" value={notes.join('\n')} onChange={(e) => setNotes(e.target.value.split('\n').filter((l) => l.trim()))} rows={4} className={`${inp} !font-ws-body !text-sm`} /></label>
         <label className="flex flex-col gap-1 text-xs text-ws-text-tertiary">surface / status
           <span className="flex gap-2"><input value={meta.surface ?? ''} onChange={(e) => setMeta({ ...meta, surface: e.target.value })} placeholder="surface" className={`${inp} flex-1`} />
-            <select value={meta.status ?? 'draft'} onChange={(e) => setMeta({ ...meta, status: e.target.value })} className={inp}>{['draft', 'live', 'retired'].map((s) => <option key={s}>{s}</option>)}</select></span></label>
+            <Select testid="meta-status" value={meta.status ?? 'draft'} onChange={(v) => setMeta({ ...meta, status: v })} options={['draft', 'live', 'retired'].map((s) => ({ value: s, label: s }))} /></span></label>
         <label className="flex flex-col gap-1 text-xs text-ws-text-tertiary">decision log (date | decision | by, one per line)
           <textarea data-testid="meta-decisions" value={decisions.map((d) => `${d.date} | ${d.decision} | ${d.by}`).join('\n')}
             onChange={(e) => setDecisions(e.target.value.split('\n').filter((l) => l.trim()).map((l) => { const [date = '', decision = '', by = ''] = l.split('|').map((x) => x.trim()); return { date, decision, by } }))} rows={3} className={`${inp} !font-ws-body !text-sm`} /></label>
@@ -129,8 +130,8 @@ export function MarkerStrip({ beats, setBeats, duration, sampleTimes, currentT, 
     <div data-testid="marker-strip" className="mt-2 flex flex-col gap-1">
       <div className="flex items-center gap-2 text-xs font-ws-mono text-ws-text-tertiary">
         <span className="uppercase tracking-[0.22em] text-[0.6rem] text-ws-sage">markers</span>
-        <select data-testid="mark-lane" value={lane} onChange={(e) => setLane(e.target.value)} className="bg-transparent border border-ws-border-subtle rounded px-1 text-ws-text-primary">{(lanes.length ? lanes : ['']).map((l) => <option key={l} value={l}>{l || '(lane)'}</option>)}</select>
-        <select data-testid="mark-target" value={target} onChange={(e) => setTarget(e.target.value)} className="bg-transparent border border-ws-border-subtle rounded px-1 text-ws-text-primary">{(trackerIds.length ? trackerIds : ['']).map((t) => <option key={t} value={t}>{t || '(target)'}</option>)}</select>
+        <Select testid="mark-lane" value={lane} onChange={setLane} options={(lanes.length ? lanes : ['']).map((l) => ({ value: l, label: l || '(lane)' }))} ariaLabel="lane" />
+        <Select testid="mark-target" value={target} onChange={setTarget} options={(trackerIds.length ? trackerIds : ['']).map((t) => ({ value: t, label: t || '(target)' }))} ariaLabel="target" />
         <button data-testid="mark-beat" onClick={() => onMark(lane, target)} className="ann-btn">mark beat here ({currentT.toFixed(2)} s)</button>
         <span>drag a flag to move it</span>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MediaItem, ProjectDoc } from './project'
 import { addFromLibrary, addMediaFromPath, addToLibrary, deleteLibraryItem, deleteMedia, fmtDuration, fmtSize, importMediaFiles, libraryFolders, libraryThumbUrl, loadLibrary, mediaInfo, mediaKind, renameMedia, sortMedia, thumbUrl, DEFAULT_FOLDERS, type LibraryDoc, type LibraryItem, type MediaInfo, type SortBy, type View } from './media'
+import { Select } from './lib/ui/Select'
 
 /**
  * Media tab (app frame A3), Camtasia's Media Bin: Import Media (picker, drop, or a path on this Mac with
@@ -73,10 +74,7 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
       </div>
       {tab === 'library' && (<>
         <div className="flex flex-wrap items-center gap-1">
-          <select data-testid="library-folder" value={libFolder} onChange={(e) => setLibFolder(e.target.value)} className="ann-btn" title="Folder">
-            <option value="">all folders</option>
-            {libraryFolders(lib).map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
+          <Select testid="library-folder" value={libFolder} onChange={setLibFolder} title="Folder" options={[{ value: '', label: 'all folders' }, ...libraryFolders(lib).map((f) => ({ value: f, label: f }))]} />
           <span className="font-ws-mono text-[0.62rem] text-ws-text-tertiary ml-auto" data-testid="library-count">{lib.items.length} item{lib.items.length === 1 ? '' : 's'} · shared by every project</span>
         </div>
         {busy && <div className="text-xs text-ws-sage font-ws-mono">{busy}</div>}
@@ -102,12 +100,8 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
           <input ref={fileRef} data-testid="media-file-input" type="file" multiple className="hidden" onChange={(e) => { importFiles(e.target.files); e.target.value = '' }} />
           <button data-testid="media-import" disabled={!!busy} onClick={() => fileRef.current?.click()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">⊕ Import Media</button>
           <button data-testid="media-from-path" disabled={!!busy} onClick={() => setPathDlg(true)} className="ann-btn" title="A file on this Mac, by path; copy or link">from path…</button>
-          <select data-testid="media-view" value={view} onChange={(e) => setView(e.target.value as View)} className="ann-btn" title="Media Bin view">
-            {(['large', 'medium', 'small', 'list'] as View[]).map((v) => <option key={v} value={v}>{v === 'list' ? 'list view' : `${v} thumbnails`}</option>)}
-          </select>
-          <select data-testid="media-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)} className="ann-btn" title="Sort by">
-            {(['name', 'type', 'date', 'size'] as SortBy[]).map((v) => <option key={v} value={v}>sort: {v}</option>)}
-          </select>
+          <Select testid="media-view" value={view} onChange={(v) => setView(v as View)} title="Media Bin view" options={(['large', 'medium', 'small', 'list'] as View[]).map((v) => ({ value: v, label: v === 'list' ? 'list view' : `${v} thumbnails` }))} />
+          <Select testid="media-sort" value={sortBy} onChange={(v) => setSortBy(v as SortBy)} title="Sort by" options={(['name', 'type', 'date', 'size'] as SortBy[]).map((v) => ({ value: v, label: `sort: ${v}` }))} />
           <button data-testid="media-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} className="ann-btn" title={dir === 'asc' ? 'Ascending' : 'Descending'}>{dir === 'asc' ? '↑' : '↓'}</button>
         </div>
         <div className="flex items-center gap-1 font-ws-mono text-[0.62rem] text-ws-text-tertiary">
@@ -195,7 +189,7 @@ function AddToLibraryDialog({ id, folders, onClose, onAdd }: { id: string; folde
         <div className="font-ws-mono text-[0.62rem] tracking-[0.22em] uppercase text-ws-terracotta-text mb-3">Add to Library</div>
         <p className="text-xs text-ws-text-secondary mb-2">A copy of <span className="font-ws-mono text-ws-text-primary">{id}</span> goes to the Library, shared by every project (Camtasia: Library › folder).</p>
         <div className="flex items-center gap-2 mb-3 text-xs text-ws-text-secondary">folder
-          <select data-testid="add-library-folder" value={folder} onChange={(e) => setFolder(e.target.value)} className="ann-btn">{folders.map((f) => <option key={f} value={f}>{f}</option>)}</select>
+          <Select testid="add-library-folder" value={folder} onChange={setFolder} options={folders.map((f) => ({ value: f, label: f }))} />
           <input data-testid="add-library-new" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="or a new folder" className="font-ws-mono text-xs bg-transparent text-ws-text-primary border border-ws-border-subtle rounded-lg px-2 py-1 outline-none focus:border-ws-terracotta w-36" />
         </div>
         <div className="flex gap-2 justify-end"><button className="ann-btn" onClick={onClose}>Cancel</button>
