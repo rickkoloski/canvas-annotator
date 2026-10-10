@@ -50,7 +50,7 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
   }
 
   return (
-    <aside data-testid="media-tab" className="w-72 shrink-0 flex flex-col gap-2 glass rounded-2xl p-3 self-start sticky top-4 max-h-[calc(100vh-2rem)]"
+    <aside data-testid="media-tab" className="w-72 shrink-0 flex flex-col gap-2 glass rounded-2xl p-3 self-start sticky top-4 max-h-[calc(100vh-2rem)] overflow-hidden"
       onDragOver={(e) => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); importFiles(e.dataTransfer.files) }}>
       <div className="flex gap-1">
         <button data-testid="tab-media-bin" onClick={() => setTab('bin')} className={`ann-chip !text-xs ${tab === 'bin' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>Media Bin</button>
@@ -79,15 +79,16 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
         </div>
         {busy && <div className="text-xs text-ws-sage font-ws-mono">{busy}</div>}
         {err && <div data-testid="media-error" className="text-xs text-ws-terracotta-text font-ws-mono">{err}</div>}
-        <div data-testid="media-list" className={`flex-1 overflow-y-auto rounded-lg p-1 border ${over ? 'border-ws-terracotta bg-[rgba(224,155,88,.08)]' : 'border-transparent'} ${view === 'list' ? 'flex flex-col gap-0.5' : 'grid gap-2'}`}
-          style={view === 'list' ? undefined : { gridTemplateColumns: view === 'small' ? '1fr 1fr 1fr' : view === 'medium' ? '1fr 1fr' : '1fr' }}>
+        {/* P1 (walk 4, Rick): the bin scrolls vertically only; columns are minmax(0, 1fr) so a long name never widens the grid */}
+        <div data-testid="media-list" className={`flex-1 overflow-y-auto overflow-x-hidden rounded-lg p-1 border ${over ? 'border-ws-terracotta bg-[rgba(224,155,88,.08)]' : 'border-transparent'} ${view === 'list' ? 'flex flex-col gap-0.5' : 'grid gap-2 content-start'}`}
+          style={view === 'list' ? undefined : { gridTemplateColumns: `repeat(${view === 'small' ? 3 : view === 'medium' ? 2 : 1}, minmax(0, 1fr))` }}>
           {items.length === 0 && <div className="text-xs text-ws-text-tertiary p-3 text-center col-span-3">Import Media, or drop files here</div>}
           {items.map((m) => {
             const selected = sel.has(m.id)
             return (
               <div key={m.id} data-testid={`media-${m.id}`} onClick={(e) => toggle(m.id, e.metaKey || e.ctrlKey || e.shiftKey)} onDoubleClick={() => setRenaming({ id: m.id, value: m.id })}
                 onContextMenu={(e) => { e.preventDefault(); setMenu({ id: m.id, x: e.clientX, y: e.clientY }) }} draggable onDragStart={(e) => { e.dataTransfer.setData('application/x-media-id', m.id); e.dataTransfer.setData('text/plain', m.file) }}
-                className={`rounded-lg p-1.5 cursor-pointer border ${selected ? 'border-ws-terracotta bg-[rgba(224,155,88,.12)]' : 'border-transparent hover:border-ws-border-strong'} ${view === 'list' ? 'flex items-center gap-2' : 'flex flex-col gap-1'}`}>
+                className={`min-w-0 rounded-lg p-1.5 cursor-pointer border ${selected ? 'border-ws-terracotta bg-[rgba(224,155,88,.12)]' : 'border-transparent hover:border-ws-border-strong'} ${view === 'list' ? 'flex items-center gap-2' : 'flex flex-col gap-1'}`}>
                 {view === 'list' ? <div className="w-12 shrink-0"><Thumb m={m} h={28} /></div> : <Thumb m={m} h={thumbH} />}
                 <div className="min-w-0 flex-1">
                   {renaming?.id === m.id
