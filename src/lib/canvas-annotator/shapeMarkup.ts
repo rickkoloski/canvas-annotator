@@ -1,4 +1,4 @@
-import type { CanvasShape, Pt } from './types'
+import type { CanvasShape, Pt, Vtx } from './types'
 
 /**
  * SVG markup for one annotation shape, drawn in CANVAS (viewBox) units.
@@ -39,13 +39,33 @@ export function shapeMarkup(s: CanvasShape, unit = 1): string {
   if (s.kind === 'line') {
     return `<polyline points="${poly}" fill="none" stroke="${c}" stroke-width="${u(3 * w)}"/>` + verts + lbl(f.x + u(12), f.y - u(12))
   }
-  const body = s.open
-    ? `<polyline points="${poly}" fill="none" stroke="${c}" stroke-width="${u(2.5 * w)}" stroke-dasharray="${u(6)} ${u(4)}"/>`
-    : `<polygon points="${poly}" fill="${c}22" stroke="${c}" stroke-width="${u(2.5 * w)}" stroke-dasharray="${u(6)} ${u(4)}"/>`
-  return body + verts + lbl(f.x + u(12), f.y - u(16))
+  const curved = (pts as Vtx[]).some((p) => p.in || p.out)
+  const body = curved
+    ? `<path d="${pathD(pts as Vtx[], !s.open)}" fill="${s.open ? 'none' : c + '22'}" stroke="${c}" stroke-width="${u(2.5 * w)}" stroke-dasharray="${u(6)} ${u(4)}"/>`
+    : s.open
+      ? `<polyline points="${poly}" fill="none" stroke="${c}" stroke-width="${u(2.5 * w)}" stroke-dasharray="${u(6)} ${u(4)}"/>`
+      : `<polygon points="${poly}" fill="${c}22" stroke="${c}" stroke-width="${u(2.5 * w)}" stroke-dasharray="${u(6)} ${u(4)}"/>`
+  const handles = curved ? (pts as Vtx[]).map((p) => [p.in, p.out].filter((h): h is Pt => !!h).map((h) =>
+    `<line x1="${p.x}" y1="${p.y}" x2="${h.x}" y2="${h.y}" stroke="${c}" stroke-width="${u(1)}" opacity="0.8"/><circle cx="${h.x}" cy="${h.y}" r="${u(4)}" fill="#FAF7F0" stroke="${c}" stroke-width="${u(1.5)}"/>`).join('')).join('') : ''
+  return body + handles + verts + lbl(f.x + u(12), f.y - u(16))
 }
 
 /** Replace `container`'s contents with the rendered shapes. */
 export function renderShapes(container: Element, shapes: CanvasShape[], unit = 1): void {
   container.innerHTML = shapes.map((s) => shapeMarkup(s, unit)).join('')
+}
+
+
+/** SVG path for a polygon whose vertices may carry bezier handles: edge i→i+1 is C (P_i.out, P_{i+1}.in, P_{i+1}); a missing handle sits on its vertex. */
+export function pathD(pts: Vtx[], close: boolean): string {
+  if (!pts.length) return ''
+  const n = pts.length; let d = `M ${pts[0].x} ${pts[0].y}`
+  const edges = close ? n : n - 1
+  for (let k = 0; k < edges; k++) {
+    const a = pts[k], b = pts[(k + 1) % n]
+    const c0 = a.out ?? a, c1 = b.in ?? b
+    if (!a.out && !b.in) { if (!(close && k === n - 1)) d += ` L ${b.x} ${b.y}` }   // a straight closing edge is Z
+    else d += ` C ${c0.x} ${c0.y} ${c1.x} ${c1.y} ${b.x} ${b.y}`
+  }
+  return close ? d + ' Z' : d
 }

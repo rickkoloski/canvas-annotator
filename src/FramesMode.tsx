@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnnotatorPanel, createSvgSpace, useShapePicker, type CanvasShape } from './lib/canvas-annotator'
 import { ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
-import { acceptRefined, buildAnchorsDoc, editEffects, hitVertex, listEffects, moveVertex, overlayFor, refinedOverlay, runEngine, type AnchorsDoc, type EffectRow, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
+import { acceptRefined, buildAnchorsDoc, editEffects, hitVertex, listEffects, moveHandle, moveVertex, overlayFor, refinedOverlay, runEngine, toggleHandles, type AnchorsDoc, type EffectRow, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
 import { BeatsTab, MarkerStrip } from './BeatsMode'
 import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
 import { bridgePaths, type ProjectDoc } from './project'
@@ -46,7 +46,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   const [resultsKey, setResultsKey] = useState(0)
   const [refined, setRefined] = useState<RefinedShape[]>([])
   const [showRefined, setShowRefined] = useState(true)
-  const drag = useRef<{ index: number; point: number } | null>(null)
+  const drag = useRef<{ index: number; point: number; handle?: 'in' | 'out'; broken?: boolean; fromVertex?: boolean } | null>(null)
   const dragged = useRef(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const paths = bridgePaths(project); const base = paths.work(shot)
@@ -166,21 +166,35 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   const duration = manifest ? manifest.frames_total / manifest.fps : 0
 
   // ── tranche 2.3: drag a vertex of a saved shape on this frame ──
+  // Tranche 5, the pen tool (After Effects / Illustrator): drag a vertex = move it (handles ride along); drag a handle =
+  // reshape, mirrored through the vertex unless Option is held (broken); Option-drag from a corner = pull out symmetric
+  // handles; Option-click a vertex = toggle corner ↔ smooth.
   const onMouseDown = (e: React.MouseEvent) => {
     if (!cur || !drawing || picker.current) return
     const p = space.screenToCanvas(e.clientX, e.clientY); if (!p) return
     const hit = hitVertex(picker.saved, cur.frame, p.x, p.y, space.pxToCanvas(10))
     if (!hit) return
-    drag.current = hit; dragged.current = false; picker.pushHistory(); e.preventDefault()
+    const sh = picker.saved[hit.index]
+    if (hit.handle) drag.current = { ...hit, broken: e.altKey }
+    else if (e.altKey && sh.kind === 'polygon') drag.current = { index: hit.index, point: hit.point, handle: 'out', fromVertex: true }
+    else drag.current = hit
+    dragged.current = false; picker.pushHistory(); e.preventDefault()
   }
   const onMouseMove = (e: React.MouseEvent) => {
     if (!drag.current) return
     const p = space.screenToCanvas(e.clientX, e.clientY); if (!p) return
     dragged.current = true
-    picker.updateSaved(drag.current.index, moveVertex(picker.saved[drag.current.index], drag.current.point, p.x, p.y), false)
+    const d = drag.current; const sh = picker.saved[d.index]
+    picker.updateSaved(d.index, d.handle ? moveHandle(sh, d.point, d.handle, p.x, p.y, !d.fromVertex && (!!d.broken || e.altKey)) : moveVertex(sh, d.point, p.x, p.y), false)
   }
-  const onMouseUp = () => { drag.current = null }
-  const onClick = (e: React.MouseEvent) => { if (dragged.current) { dragged.current = false; return } picker.onCanvasClick(e) }
+  const onMouseUp = () => {
+    const d = drag.current; drag.current = null
+    if (d?.fromVertex && !dragged.current) { picker.updateSaved(d.index, toggleHandles(picker.saved[d.index], d.point), false); dragged.current = true }   // Option-click: corner ↔ smooth
+    // the click that follows this mouseup (same tick) is swallowed by onClick; a drag whose down and up hit different
+    // elements fires no click at all, so clear the flag afterwards or the next real click would be eaten
+    if (d) window.setTimeout(() => { dragged.current = false }, 0)
+  }
+  const onClick = (e: React.MouseEvent) => { if (dragged.current) { dragged.current = false; return } if (e.altKey) return; picker.onCanvasClick(e) }
 
   // ── tranche 2.2 / 2.4: accept the engine's refinement; save and re-track ──
   const hereRefined = cur ? refined.filter((r) => r.frame === cur.frame) : []
@@ -324,7 +338,12 @@ function Loupe({ src, svgRef, shapes }: { src: string; svgRef: React.RefObject<S
     for (const s of shapes) {
       ctx.strokeStyle = s.color ?? '#FF3B81'; ctx.lineWidth = 1.5
       if (s.kind === 'circle') { ctx.beginPath(); ctx.arc(tx(s.x), ty(s.y), s.r * ZOOM, 0, Math.PI * 2); ctx.stroke() }
-      else { ctx.beginPath(); s.points.forEach((p, i) => (i ? ctx.lineTo(tx(p.x), ty(p.y)) : ctx.moveTo(tx(p.x), ty(p.y)))); if (s.kind === 'polygon' && !s.open) ctx.closePath(); ctx.stroke()
+      else {
+        ctx.beginPath(); const pts = s.points as { x: number; y: number; in?: { x: number; y: number }; out?: { x: number; y: number } }[]; const n = pts.length
+        ctx.moveTo(tx(pts[0].x), ty(pts[0].y))
+        const edges = s.kind === 'polygon' && !s.open ? n : n - 1
+        for (let k = 0; k < edges; k++) { const a = pts[k], b = pts[(k + 1) % n]; if (a.out || b.in) { const c0 = a.out ?? a, c1 = b.in ?? b; ctx.bezierCurveTo(tx(c0.x), ty(c0.y), tx(c1.x), ty(c1.y), tx(b.x), ty(b.y)) } else ctx.lineTo(tx(b.x), ty(b.y)) }
+        ctx.stroke()
         for (const p of s.points) { ctx.beginPath(); ctx.arc(tx(p.x), ty(p.y), 3, 0, Math.PI * 2); ctx.stroke() } }
     }
     ctx.strokeStyle = '#F0B47A'; ctx.lineWidth = 1

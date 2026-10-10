@@ -10,6 +10,9 @@
  * without it are timeless, the original behaviour. See docs/anchors.schema.md.
  */
 export type Pt = { x: number; y: number }
+/** Tranche 5 (schema v2): a polygon vertex may carry cubic bezier handles (absolute canvas coords), as After Effects'
+ * and Illustrator's pen tool: `out` shapes the edge leaving the vertex, `in` the edge arriving. Absent = a corner. */
+export type Vtx = Pt & { in?: Pt; out?: Pt }
 
 export type ShapeKind = 'circle' | 'line' | 'polygon'
 
@@ -18,4 +21,4 @@ type Common = { id: string; label: string; color?: string; wip?: boolean; frame?
 export type CanvasShape =
   | ({ kind: 'circle'; x: number; y: number; r: number } & Common)
   | ({ kind: 'line'; points: Pt[] } & Common)
-  | ({ kind: 'polygon'; points: Pt[]; open?: boolean } & Common)
+  | ({ kind: 'polygon'; points: Vtx[]; open?: boolean } & Common)

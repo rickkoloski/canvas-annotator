@@ -1,4 +1,4 @@
-import type { CanvasShape } from './lib/canvas-annotator'
+import type { CanvasShape, Pt, Vtx } from './lib/canvas-annotator'
 
 /** What `vidfx keyframes` writes next to its sample frames. */
 export type Manifest = {
@@ -14,7 +14,7 @@ export const GHOST = '#8E9678'
 /** The anchors.json document for a video canvas (docs/anchors.schema.md). Strips UI-only fields. */
 export function buildAnchorsDoc(manifest: Manifest, saved: CanvasShape[]): AnchorsDoc {
   return {
-    version: 1,
+    version: hasHandles(saved) ? 2 : 1,   // schema v2 = bezier handles on polygon vertices (tranche 5)
     canvas: { kind: 'video', width: manifest.canvas.width, height: manifest.canvas.height, fps: manifest.fps, source: manifest.source, shot: manifest.shot },
     shapes: saved.map(({ wip: _w, color: _c, ...s }) => s as CanvasShape),
   }
@@ -57,7 +57,7 @@ export function acceptRefined(saved: CanvasShape[], refined: RefinedShape[], fra
     const r = refined.find((x) => x.id === s.id && x.frame === s.frame && (frame === undefined || s.frame === frame))
     if (!r || r.kind !== s.kind) return s
     if (s.kind === 'circle' && r.kind === 'circle') return { ...s, x: r.x, y: r.y }
-    if (s.kind !== 'circle' && r.kind !== 'circle') return { ...s, points: r.points.map((p) => ({ x: p.x, y: p.y })) }
+    if (s.kind !== 'circle' && r.kind !== 'circle') return { ...s, points: r.points.map((p) => ({ x: p.x, y: p.y, ...((p as Vtx).in ? { in: (p as Vtx).in } : {}), ...((p as Vtx).out ? { out: (p as Vtx).out } : {}) })) }
     return s
   })
 }
@@ -68,23 +68,61 @@ export function refinedOverlay(refined: RefinedShape[], frame: number): CanvasSh
 }
 
 /** Nearest vertex of a saved shape on `frame` within `tol` canvas units of (x, y). */
-export function hitVertex(saved: CanvasShape[], frame: number, x: number, y: number, tol: number): { index: number; point: number } | null {
-  const hits: { index: number; point: number; d: number }[] = []
+export type VertexHit = { index: number; point: number; handle?: 'in' | 'out' }
+/** The nearest vertex, circle centre, or (tranche 5) bezier handle on `frame` within `tol`. Handles win ties: they sit near their vertex. */
+export function hitVertex(saved: CanvasShape[], frame: number, x: number, y: number, tol: number): VertexHit | null {
+  const hits: (VertexHit & { d: number })[] = []
   saved.forEach((s, index) => {
     if (s.frame !== frame) return
     const pts = s.kind === 'circle' ? [{ x: s.x, y: s.y }] : s.points
-    pts.forEach((p, point) => { const d = Math.hypot(p.x - x, p.y - y); if (d <= tol) hits.push({ index, point, d }) })
+    pts.forEach((p, point) => {
+      const d = Math.hypot(p.x - x, p.y - y); if (d <= tol) hits.push({ index, point, d: d + 0.01 })
+      if (s.kind === 'polygon') for (const h of ['in', 'out'] as const) { const q = (p as Vtx)[h]; if (q) { const dh = Math.hypot(q.x - x, q.y - y); if (dh <= tol) hits.push({ index, point, handle: h, d: dh }) } }
+    })
   })
   if (!hits.length) return null
   const b = hits.sort((p, q) => p.d - q.d)[0]
-  return { index: b.index, point: b.point }
+  return { index: b.index, point: b.point, ...(b.handle ? { handle: b.handle } : {}) }
 }
 
-/** Move one vertex (or a circle's centre) of a shape. */
+/** Move one vertex (or a circle's centre) of a shape; a vertex's handles move with it. */
 export function moveVertex(s: CanvasShape, point: number, x: number, y: number): CanvasShape {
   if (s.kind === 'circle') return { ...s, x: Math.round(x), y: Math.round(y) }
-  return { ...s, points: s.points.map((p, i) => (i === point ? { x: Math.round(x), y: Math.round(y) } : p)) }
+  return { ...s, points: s.points.map((p, i) => {
+    if (i !== point) return p
+    const dx = Math.round(x) - p.x, dy = Math.round(y) - p.y; const v = p as Vtx
+    return { ...p, x: Math.round(x), y: Math.round(y), ...(v.in ? { in: { x: v.in.x + dx, y: v.in.y + dy } } : {}), ...(v.out ? { out: { x: v.out.x + dx, y: v.out.y + dy } } : {}) }
+  }) }
 }
+
+/**
+ * Tranche 5, the pen tool's handle rules (After Effects / Illustrator): dragging a handle keeps the opposite one
+ * mirrored through the vertex (a smooth point) unless `broken` (Option held), which moves this handle alone.
+ */
+export function moveHandle(s: CanvasShape, point: number, which: 'in' | 'out', x: number, y: number, broken: boolean, snap = 8): CanvasShape {
+  if (s.kind !== 'polygon') return s
+  return { ...s, points: s.points.map((p, i) => {
+    if (i !== point) return p
+    const h = { x: Math.round(x), y: Math.round(y) }; const other = which === 'in' ? 'out' : 'in'
+    const mirrored = broken ? (p as Vtx)[other] : { x: 2 * p.x - h.x, y: 2 * p.y - h.y }
+    const v: Vtx = { ...p, [which]: h, ...(mirrored ? { [other]: mirrored } : {}) }
+    // a handle dropped on its corner retracts (AE: a zero-length handle is a corner); mirrored one too when not broken
+    for (const k of ['in', 'out'] as const) { const q = v[k]; if (q && Math.hypot(q.x - p.x, q.y - p.y) <= snap && (k === which || !broken)) delete v[k] }
+    return v
+  }) }
+}
+/** Option-click a corner: give it symmetric handles along its neighbours' direction (a smooth point); Option-click a smooth point: back to a corner. */
+export function toggleHandles(s: CanvasShape, point: number): CanvasShape {
+  if (s.kind !== 'polygon') return s
+  const p = s.points[point] as Vtx
+  if (p.in || p.out) { const { in: _i, out: _o, ...rest } = p; return { ...s, points: s.points.map((q, i) => (i === point ? rest : q)) } }
+  const n = s.points.length; const prev = s.points[(point - 1 + n) % n], next = s.points[(point + 1) % n]
+  const dx = next.x - prev.x, dy = next.y - prev.y; const len = Math.hypot(dx, dy) || 1; const k = Math.min(len / 3, 80)
+  const out = { x: Math.round(p.x + (dx / len) * k), y: Math.round(p.y + (dy / len) * k) }, inn = { x: Math.round(p.x - (dx / len) * k), y: Math.round(p.y - (dy / len) * k) }
+  return { ...s, points: s.points.map((q, i) => (i === point ? { ...q, in: inn, out } : q)) }
+}
+export const hasHandles = (shapes: CanvasShape[]) => shapes.some((s) => s.kind === 'polygon' && s.points.some((p) => (p as Vtx).in || (p as Vtx).out))
+export type { Pt }
 
 
 /** A5: the shot file's effects list, read and edited through `vidfx effects` so the YAML stays the truth. */

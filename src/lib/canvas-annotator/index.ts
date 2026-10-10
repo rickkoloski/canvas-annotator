@@ -19,3 +19,5 @@ export { useShapePicker, formatShape } from './useShapePicker'
 export type { ShapePicker } from './useShapePicker'
 export { useDraggable } from './useDraggable'
 export { AnnotatorPanel, groupTrackers } from './AnnotatorPanel'
+
+export type { Vtx } from './types'

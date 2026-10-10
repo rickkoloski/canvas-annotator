@@ -63,3 +63,27 @@ write it; both read it. One file per canvas, or per shot when the canvas is a vi
 
 The manifest is not an anchors file; it lists frames: `{frame, t, path, grid, width, height}`
 plus `canvas`, `fps`, `frames_total`, `source`, `shot`.
+
+## Version 2: bezier handles on polygon vertices (tranche 5, 2026-10-10)
+
+A polygon vertex may carry two cubic bezier handles, absolute canvas coordinates, named as After Effects' and
+Illustrator's pen tool name them: `out` shapes the edge leaving the vertex, `in` the edge arriving. A vertex
+without handles is a corner. The edge from vertex *i* to *i+1* is the cubic (P_i, P_i.out, P_{i+1}.in, P_{i+1});
+a missing handle sits on its vertex. The document says `"version": 2` when any shape has handles.
+
+```json
+{ "kind": "polygon", "id": "monitor", "label": "monitor", "frame": 0,
+  "points": [ { "x": 854, "y": 318, "out": { "x": 991, "y": 271 } },
+              { "x": 1270, "y": 240, "in": { "x": 1130, "y": 190 } },
+              { "x": 1310, "y": 825, "out": { "x": 1170, "y": 860 } },
+              { "x": 875, "y": 758, "in": { "x": 1010, "y": 815 } } ] }
+```
+
+Authoring in the page (the pen tool's rules): Option-drag from a corner pulls out symmetric handles; dragging a
+handle keeps its opposite mirrored through the vertex unless Option is held (broken); Option-click toggles corner
+and smooth; moving a vertex moves its handles. The engine (`vidfx track`) orders the four corners TL TR BR BL and
+orders the handles with them, stores them as offsets from each corner so refinement and interpolation carry them
+along, lets a keyframe without handles inherit the nearest keyframe's, writes `motion/<id>_handles.npy`
+(frames × 4 × [in, out] × xy at the tracking resolution) and returns handles in `refined.json`. Effects on a
+curved quad (fly-out, pin, overlay) warp by a Coons patch instead of a homography; the fly-out's edges straighten
+as it flattens.
