@@ -109,11 +109,13 @@ export function BeatsTab({ shot, beats, setBeats, meta, setMeta, notes, setNotes
 }
 
 /** Marker strip under the frame strip: beats as draggable flags on a 0..duration bar (Camtasia markers). */
-export function MarkerStrip({ beats, setBeats, duration, sampleTimes, currentT, onMark, lanes, trackerIds }: {
+export function MarkerStrip({ beats, setBeats, duration, sampleTimes, currentT, onMark, lanes, trackerIds, target, setTarget }: {
   beats: Beats; setBeats: (b: Beats) => void; duration: number; sampleTimes: number[]; currentT: number
   onMark: (lane: string, target: string) => void; lanes: string[]; trackerIds: string[]
+  /** T2: the mark-beat target is owned by the host so a click on a tracker in the panel can set it. */
+  target: string; setTarget: (id: string) => void
 }) {
-  const [lane, setLane] = useState(lanes[0] ?? ''); const [target, setTarget] = useState(trackerIds[0] ?? '')
+  const [lane, setLane] = useState(lanes[0] ?? '')
   const [drag, setDrag] = useState<string | null>(null)
   const pct = (t: number) => `${(100 * t) / Math.max(duration, 0.001)}%`
   const onMove = (e: React.MouseEvent<HTMLDivElement>) => {

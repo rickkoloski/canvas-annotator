@@ -60,12 +60,20 @@ export function AnnotatorPanel({
   title = 'Annotate Canvas',
   initialPos = { x: typeof window !== 'undefined' ? window.innerWidth - 364 : 24, y: 80 },
   extraActions,
+  onJumpFrame,
+  onSelectTracker,
+  selectedTracker,
 }: {
   picker: ShapePicker
   title?: string
   initialPos?: { x: number; y: number }
   /** Host-supplied buttons rendered beside "copy all" (e.g. save to a file). */
   extraActions?: React.ReactNode
+  /** T2: clicking a keyframe row's name jumps the host to that frame. */
+  onJumpFrame?: (frame: number) => void
+  /** T2: clicking a motion tracker's name selects it (the host uses it as the mark-beat target). */
+  onSelectTracker?: (id: string) => void
+  selectedTracker?: string
 }) {
   const [min, setMin] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -223,14 +231,20 @@ export function AnnotatorPanel({
                       <div key={g.id} data-testid={`tracker-${g.id}`} className="flex flex-col">
                         <div className="flex items-center gap-2 text-[0.68rem] font-ws-mono text-ws-text-primary">
                           <button data-testid={`tracker-toggle-${g.id}`} onClick={() => setCollapsed((c) => { const n = new Set(c); n.has(g.id) ? n.delete(g.id) : n.add(g.id); return n })} className="ann-btn !px-1.5 !py-0.5" title={open ? 'Collapse' : 'Expand'}>{open ? '▾' : '▸'}</button>
-                          <span className="truncate flex-1" style={hidden ? { opacity: 0.5 } : undefined}>{kindIcon} {g.id} <span className="text-ws-text-tertiary">· {g.rows.length} {g.rows.some((r) => r.n.frame !== undefined) ? 'frame' : 'shape'}{g.rows.length !== 1 ? 's' : ''}</span></span>
+                          <button data-testid={`tracker-name-${g.id}`} onClick={() => onSelectTracker?.(g.id)} disabled={!onSelectTracker}
+                            className={`truncate flex-1 text-left bg-transparent border-0 p-0 font-inherit text-inherit ${onSelectTracker ? 'cursor-pointer hover:text-ws-terracotta' : 'cursor-default'}`}
+                            style={{ opacity: hidden ? 0.5 : 1, color: selectedTracker === g.id ? '#C06A45' : undefined }} title={onSelectTracker ? 'Select as the mark-beat target' : undefined}>
+                            {selectedTracker === g.id ? '▸ ' : ''}{kindIcon} {g.id} <span className="text-ws-text-tertiary">· {g.rows.length} {g.rows.some((r) => r.n.frame !== undefined) ? 'frame' : 'shape'}{g.rows.length !== 1 ? 's' : ''}</span>
+                          </button>
                           <button data-testid={`tracker-hide-${g.id}`} onClick={() => picker.toggleHidden(g.id)} className="ann-btn !px-1.5 !py-0.5" title={hidden ? 'Show on canvas' : 'Hide on canvas'}>{hidden ? '◌' : '◉'}</button>
                           <button data-testid={`tracker-delete-${g.id}`} onClick={() => picker.deleteTracker(g.id)} className="ann-btn !px-1.5 !py-0.5" title="Delete the whole motion tracker">×</button>
                         </div>
                         {open && g.rows.map(({ n, i }) => (
                           <div key={`${n.id}-${n.frame ?? 'x'}-${i}`} data-testid={`saved-row-${i}`} className="flex items-center gap-2 pl-6 text-[0.66rem] font-ws-mono text-ws-text-secondary">
                             <button data-testid={`saved-edit-${i}`} onClick={() => picker.editSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Re-open for editing">✎</button>
-                            <span className="truncate flex-1" title={picker.formatShape(n)}>{n.frame !== undefined ? `frame ${n.frame}` : n.label || n.id}</span>
+                            <button data-testid={`saved-jump-${i}`} onClick={() => { if (n.frame !== undefined) onJumpFrame?.(n.frame) }} disabled={!onJumpFrame || n.frame === undefined}
+                              className={`truncate flex-1 text-left bg-transparent border-0 p-0 font-inherit text-inherit ${onJumpFrame && n.frame !== undefined ? 'cursor-pointer hover:text-ws-terracotta' : 'cursor-default'}`}
+                              title={onJumpFrame && n.frame !== undefined ? `Jump to frame ${n.frame}` : picker.formatShape(n)}>{n.frame !== undefined ? `frame ${n.frame}` : n.label || n.id}</button>
                             <button data-testid={`saved-delete-${i}`} onClick={() => picker.deleteSaved(i)} className="ann-btn !px-1.5 !py-0.5" title="Delete">×</button>
                           </div>
                         ))}

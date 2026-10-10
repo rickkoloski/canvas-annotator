@@ -87,6 +87,10 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   }
   const copyJson = () => { const d = fullDoc(); if (d) navigator.clipboard?.writeText(JSON.stringify(d, null, 2)) }
   const trackerIds = [...new Set(picker.saved.map((sh) => sh.id))]
+  // T2: the mark-beat target; a click on a tracker's name in the panel selects it. Falls back to the first tracker.
+  const [pickedTarget, setPickedTarget] = useState('')
+  const markTarget = trackerIds.includes(pickedTarget) ? pickedTarget : (trackerIds[0] ?? '')
+  const jumpToFrame = (frame: number) => { const i = manifest?.frames.findIndex((f) => f.frame === frame) ?? -1; if (i >= 0) setIdx(i) }
   const laneNames = beats.lanes.length ? beats.lanes : [...new Set((manifest?.effects ?? []).map((e) => e.kind).filter((k): k is string => !!k))]
   const duration = manifest ? manifest.frames_total / manifest.fps : 0
 
@@ -155,6 +159,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
             })}
           </div>
           <MarkerStrip beats={beats} setBeats={setBeats} duration={duration} sampleTimes={manifest.frames.map((f) => f.t)} currentT={cur.t} lanes={laneNames} trackerIds={trackerIds}
+            target={markTarget} setTarget={setPickedTarget}
             onMark={(lane, target) => setBeats(markBeat({ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }, cur.t, lane, target).beats)} />
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
           {refined.length > 0 && (
@@ -173,7 +178,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
             </div>
           )}
           <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined() }} />
-          {drawing && <AnnotatorPanel picker={picker} title={`Annotate · ${shot}`} extraActions={<>
+          {drawing && <AnnotatorPanel picker={picker} title={`Annotate · ${shot}`} onJumpFrame={jumpToFrame} onSelectTracker={setPickedTarget} selectedTracker={markTarget} extraActions={<>
             <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
             <button data-testid="save-anchors" onClick={save} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">save anchors.json</button>
           </>} />}
