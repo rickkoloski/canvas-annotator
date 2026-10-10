@@ -4,6 +4,7 @@ import { ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
 import { acceptRefined, buildAnchorsDoc, hitVertex, moveVertex, overlayFor, refinedOverlay, runEngine, type AnchorsDoc, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
 import { BeatsTab, MarkerStrip } from './BeatsMode'
 import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
+import { bridgePaths } from './project'
 
 /**
  * Video-frame mode (PLAN.md Phase 2 + tranche 1): a frame strip over the engine's sampled
@@ -11,7 +12,7 @@ import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
  * Save → work/<shot>/anchors.json, an engine console (sample frames, track, crops, render)
  * through the dev bridge, and a results view.
  */
-export function FramesMode({ shot, drawing, onShotChange }: { shot: string; drawing: boolean; onShotChange: (s: string) => void }) {
+export function FramesMode({ shot, drawing, onShotChange, project }: { shot: string; drawing: boolean; onShotChange: (s: string) => void; project?: string }) {
   const [manifest, setManifest] = useState<Manifest | null>(null)
   const [error, setError] = useState('')
   const [idx, setIdx] = useState(0)
@@ -26,7 +27,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
   const drag = useRef<{ index: number; point: number } | null>(null)
   const dragged = useRef(false)
   const svgRef = useRef<SVGSVGElement>(null)
-  const base = `/work/${shot}`
+  const paths = bridgePaths(project); const base = paths.work(shot)
 
   const loadRefined = async () => {
     const r = await fetch(`${base}/refined.json?v=${Date.now()}`)
@@ -119,7 +120,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
     if (!manifest || retracking) return
     setRetracking(true)
     await fetch(`${base}/anchors.json`, { method: 'PUT', body: JSON.stringify(fullDoc(), null, 2) })
-    const code = await runEngine('track', shot, [], () => {})
+    const code = await runEngine('track', shot, [], () => {}, project)
     await loadRefined(); setResultsKey((k) => k + 1); setRetracking(false)
     setSavedMsg(code === 0 ? 'saved and re-tracked; refined overlay updated' : `re-track failed (exit ${code})`)
     window.setTimeout(() => setSavedMsg(''), 4000)
@@ -177,7 +178,7 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
               <button data-testid="retrack" disabled={retracking} onClick={retrack} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{retracking ? 'tracking…' : 'save & re-track'}</button>
             </div>
           )}
-          <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined() }} />
+          <EngineConsole shot={shot} project={project} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined() }} />
           {drawing && <AnnotatorPanel picker={picker} title={`Annotate · ${shot}`} onJumpFrame={jumpToFrame} onSelectTracker={setPickedTarget} selectedTracker={markTarget} extraActions={<>
             <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
             <button data-testid="save-anchors" onClick={save} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">save anchors.json</button>
@@ -186,12 +187,12 @@ export function FramesMode({ shot, drawing, onShotChange }: { shot: string; draw
       )}
 
       {view === 'beats' && manifest && (
-        <BeatsTab shot={shot} beats={{ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }} setBeats={setBeats} meta={meta} setMeta={setMeta} notes={notes} setNotes={setNotes}
+        <BeatsTab shot={shot} project={project} beats={{ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }} setBeats={setBeats} meta={meta} setMeta={setMeta} notes={notes} setNotes={setNotes}
           decisions={decisions} setDecisions={setDecisions} trackerIds={trackerIds} duration={duration} onSaveAnchors={save} />
       )}
       {view === 'results' && <>
         <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => setResultsKey((k) => k + 1)} />
-        <Results key={resultsKey} shot={shot} />
+        <Results key={resultsKey} shot={shot} project={project} />
       </>}
     </div>
   )
@@ -245,12 +246,12 @@ function Loupe({ src, svgRef, shapes }: { src: string; svgRef: React.RefObject<S
 }
 
 /** Run engine commands from the page through the dev bridge (tranche 1.5, 1.6). */
-function EngineConsole({ shot, manifest, onManifest, onResults }: { shot: string; manifest: Manifest | null; onManifest: () => Promise<Manifest>; onResults: () => void }) {
+function EngineConsole({ shot, project, manifest, onManifest, onResults }: { shot: string; project?: string; manifest: Manifest | null; onManifest: () => Promise<Manifest>; onResults: () => void }) {
   const [out, setOut] = useState(''); const [busy, setBusy] = useState(''); const [frameReq, setFrameReq] = useState('')
   const run = async (cmd: string, args: string[], after?: () => void | Promise<unknown>) => {
     if (busy) return
     setBusy(cmd); setOut('')
-    const code = await runEngine(cmd, shot, args, (s) => setOut((o) => o + s))
+    const code = await runEngine(cmd, shot, args, (s) => setOut((o) => o + s), project)
     setBusy('')
     if (code === 0 && after) await after()
   }
@@ -278,17 +279,19 @@ function EngineConsole({ shot, manifest, onManifest, onResults }: { shot: string
 }
 
 /** What the engine produced for this shot: refined keyframes, crops, review stills, the draft. */
-function Results({ shot }: { shot: string }) {
+function Results({ shot, project }: { shot: string; project?: string }) {
   const [dbg, setDbg] = useState<string[]>([]); const [stills, setStills] = useState<string[]>([]); const [crops, setCrops] = useState<string[]>([]); const [draft, setDraft] = useState('')
+  const paths = bridgePaths(project); const work = paths.work(shot)
   useEffect(() => {
     const ls = async (p: string) => { const r = await fetch(p); return r.ok ? ((await r.json()) as { name: string }[]).map((e) => e.name).filter((n) => /\.(jpg|png)$/.test(n)) : [] }
-    ls(`/work/${shot}/keyframes_debug/`).then(setDbg); ls(`/work/${shot}/stills/`).then(setStills); ls(`/work/${shot}/crops/`).then(setCrops)
-    fetch(`/renders/${shot}_1080p.mp4`, { method: 'HEAD' }).then((r) => setDraft(r.ok ? `/renders/${shot}_1080p.mp4?v=${Date.now()}` : ''))
-  }, [shot])
+    ls(`${work}/keyframes_debug/`).then(setDbg); ls(`${work}/stills/`).then(setStills); ls(`${work}/crops/`).then(setCrops)
+    fetch(`${paths.renders}/${shot}_1080p.mp4`, { method: 'HEAD' }).then((r) => setDraft(r.ok ? `${paths.renders}/${shot}_1080p.mp4?v=${Date.now()}` : ''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shot, project])
   const Row = ({ title, dir, names, testid }: { title: string; dir: string; names: string[]; testid: string }) => (
     <section className="mb-5">
       <h2 className="font-ws-mono text-xs uppercase tracking-widest text-ws-sage mb-2">{title} <span className="text-ws-text-tertiary">({names.length})</span></h2>
-      <div data-testid={testid} className="flex gap-2 overflow-x-auto pb-2">{names.map((n) => <a key={n} className="shrink-0" href={`/work/${shot}/${dir}/${n}`} target="_blank" rel="noreferrer"><img src={`/work/${shot}/${dir}/${n}`} alt={n} title={n} className="block h-44 w-auto max-w-none rounded-lg border border-ws-border-subtle" /></a>)}</div>
+      <div data-testid={testid} className="flex gap-2 overflow-x-auto pb-2">{names.map((n) => <a key={n} className="shrink-0" href={`${work}/${dir}/${n}`} target="_blank" rel="noreferrer"><img src={`${work}/${dir}/${n}`} alt={n} title={n} className="block h-44 w-auto max-w-none rounded-lg border border-ws-border-subtle" /></a>)}</div>
     </section>
   )
   return (

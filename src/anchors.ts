@@ -37,8 +37,8 @@ export function overlayFor(saved: CanvasShape[], frame: number): { here: CanvasS
 }
 
 /** Run an engine command through the dev bridge; streams text into `onChunk`. Resolves with the exit code. */
-export async function runEngine(cmd: string, shot: string, args: string[], onChunk: (s: string) => void): Promise<number> {
-  const r = await fetch('/vidfx/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cmd, shot, args }) })
+export async function runEngine(cmd: string, shot: string, args: string[], onChunk: (s: string) => void, project?: string): Promise<number> {
+  const r = await fetch('/vidfx/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cmd, shot, args, ...(project ? { project } : {}) }) })
   if (!r.ok || !r.body) { onChunk(`bridge error ${r.status}: ${await r.text()}\n`); return 127 }
   const reader = r.body.getReader(); const dec = new TextDecoder(); let all = ''
   for (;;) { const { value, done } = await reader.read(); if (done) break; const s = dec.decode(value, { stream: true }); all += s; onChunk(s) }

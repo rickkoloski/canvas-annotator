@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { markBeat, swimlanes, type Beats, type BeatRow, type Meta } from './beats'
 import { runEngine } from './anchors'
+import { bridgePaths } from './project'
 
 /** Beats tab (tranche 4): lanes, the marker table with swimlanes, held spans, meta/notes/decisions,
  * and the Animation Script export (written by the engine's `vidfx script` through the bridge). */
-export function BeatsTab({ shot, beats, setBeats, meta, setMeta, notes, setNotes, decisions, setDecisions, trackerIds, duration, onSaveAnchors }: {
+export function BeatsTab({ shot, project, beats, setBeats, meta, setMeta, notes, setNotes, decisions, setDecisions, trackerIds, duration, onSaveAnchors }: {
+  project?: string
   shot: string; beats: Beats; setBeats: (b: Beats) => void
   meta: Meta; setMeta: (m: Meta) => void; notes: string[]; setNotes: (n: string[]) => void
   decisions: { date: string; decision: string; by: string }[]; setDecisions: (d: { date: string; decision: string; by: string }[]) => void
@@ -24,8 +26,8 @@ export function BeatsTab({ shot, beats, setBeats, meta, setMeta, notes, setNotes
     setBusy(true); setMsg('')
     const ok = await onSaveAnchors()
     if (!ok) { setBusy(false); setMsg('save failed'); return }
-    const code = await runEngine('script', shot, [], () => {})
-    const r = await fetch(`/shots/${shot}.animation.md?v=${Date.now()}`)
+    const code = await runEngine('script', shot, [], () => {}, project)
+    const r = await fetch(`${bridgePaths(project).shots}/${shot}.animation.md?v=${Date.now()}`)
     setScript(r.ok ? await r.text() : ''); setBusy(false)
     setMsg(code === 0 && r.ok ? `written: shots/${shot}.animation.md` : `script failed (exit ${code})`)
   }

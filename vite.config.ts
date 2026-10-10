@@ -14,11 +14,20 @@ import { spawn } from 'node:child_process'
  *   POST /vidfx/run  {cmd, shot, args?}  runs an allow-listed vidfx command (incl. `script`) on a shot file and
  *                                        streams its output; the page is the operator console
  *   VIDFX_ROOT=~/src/ops/creative/video-fx   (default)
+ *   Projects (app frame A1): PROJECTS_ROOT=~/src/ops/creative/projects; one directory per project
+ *   (project.json, media/, shots/, work/, renders/).
+ *   GET  /projects                 list [{name, modified, canvas, shots, media}]
+ *   POST /projects {name, canvas}  create the directory + project.json (409 if it exists)
+ *   GET  /projects/<name>/**       files and listings as above; PUT writable: project.json, work/**\/anchors.json, shots/*.animation.md
+ *   POST /vidfx/run {project}      runs the command on projects/<name>/shots/<shot>.yaml
  */
 function vidfxBridge(): Plugin {
   const ROOT = (process.env.VIDFX_ROOT ?? path.join(os.homedir(), 'src/ops/creative/video-fx')).replace(/^~/, os.homedir())
   const VIDFX = path.join(ROOT, '.venv/bin/vidfx')
-  const MOUNTS: Record<string, string> = { '/work/': path.join(ROOT, 'work'), '/renders/': path.join(ROOT, 'renders'), '/shots/': path.join(ROOT, 'shots') }
+  const PROJECTS = (process.env.PROJECTS_ROOT ?? path.join(os.homedir(), 'src/ops/creative/projects')).replace(/^~/, os.homedir())
+  const MOUNTS: Record<string, string> = { '/work/': path.join(ROOT, 'work'), '/renders/': path.join(ROOT, 'renders'), '/shots/': path.join(ROOT, 'shots'), '/projects/': PROJECTS }
+  const SAFE_NAME = /^[A-Za-z0-9][\w.-]{0,63}$/
+  const readProject = (name: string) => { try { return JSON.parse(fs.readFileSync(path.join(PROJECTS, name, 'project.json'), 'utf8')) } catch { return null } }
   const TYPES: Record<string, string> = { '.json': 'application/json', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.yaml': 'text/yaml', '.npy': 'application/octet-stream', '.txt': 'text/plain' }
   const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills', 'script'])
@@ -35,13 +44,15 @@ function vidfxBridge(): Plugin {
         // ── engine runner ──
         if (url === '/vidfx/run') {
           if (req.method !== 'POST') { res.statusCode = 405; return res.end() }
-          let body: { cmd?: string; shot?: string; args?: string[] }
+          let body: { cmd?: string; shot?: string; args?: string[]; project?: string }
           try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
-          const { cmd, shot, args = [] } = body
+          const { cmd, shot, args = [], project } = body
           if (!cmd || !CMDS.has(cmd)) { res.statusCode = 400; return res.end(`cmd must be one of ${[...CMDS].join(', ')}`) }
           if (cmd !== 'probe' && !(shot && SAFE_SHOT.test(shot))) { res.statusCode = 400; return res.end('shot name required') }
+          if (project !== undefined && !(typeof project === 'string' && SAFE_NAME.test(project) && readProject(project))) { res.statusCode = 400; return res.end('unknown project') }
           if (!Array.isArray(args) || !args.every((a) => typeof a === 'string' && SAFE_ARG.test(a))) { res.statusCode = 400; return res.end('bad args') }
-          const argv = cmd === 'probe' ? args : [`shots/${shot}.yaml`, ...args]
+          const shotFile = project ? path.join(PROJECTS, project, 'shots', `${shot}.yaml`) : `shots/${shot}.yaml`
+          const argv = cmd === 'probe' ? args : [shotFile, ...args]
           res.statusCode = 200; res.setHeader('content-type', 'text/plain; charset=utf-8'); res.setHeader('cache-control', 'no-store')
           res.write(`$ vidfx ${cmd} ${argv.join(' ')}\n`)
           const child = spawn(VIDFX, [cmd, ...argv], { cwd: ROOT })
@@ -52,6 +63,32 @@ function vidfxBridge(): Plugin {
           return
         }
 
+        // ── projects (A1) ──
+        if (url === '/projects') {
+          if (req.method === 'GET') {
+            fs.mkdirSync(PROJECTS, { recursive: true })
+            const list = fs.readdirSync(PROJECTS).filter((n) => SAFE_NAME.test(n)).map((n) => ({ n, p: readProject(n) })).filter((x) => x.p)
+              .map(({ n, p }) => ({ name: n, modified: p.modified ?? '', canvas: p.canvas, shots: (p.shots ?? []).length, media: (p.media ?? []).length }))
+              .sort((a, b) => (a.modified < b.modified ? 1 : -1))
+            res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(list))
+          }
+          if (req.method === 'POST') {
+            let body: { name?: string; canvas?: { width: number; height: number; fps: number } }
+            try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+            const { name, canvas = { width: 1920, height: 1080, fps: 25 } } = body
+            if (!name || !SAFE_NAME.test(name)) { res.statusCode = 400; return res.end('bad project name') }
+            if (![canvas.width, canvas.height, canvas.fps].every((n) => typeof n === 'number' && n > 0)) { res.statusCode = 400; return res.end('canvas needs width, height, fps') }
+            const dir = path.join(PROJECTS, name)
+            if (fs.existsSync(dir)) { res.statusCode = 409; return res.end('project exists') }
+            for (const d of ['media', 'shots', 'work', 'renders']) fs.mkdirSync(path.join(dir, d), { recursive: true })
+            const t = new Date().toISOString()
+            const doc = { version: 1, name, created: t, modified: t, canvas, media: [], shots: [] }
+            fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify(doc, null, 2))
+            res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
+          }
+          res.statusCode = 405; return res.end()
+        }
+
         // ── files ──
         const mount = Object.keys(MOUNTS).find((m) => url.startsWith(m))
         if (!mount) return next()
@@ -60,8 +97,11 @@ function vidfxBridge(): Plugin {
         if (!file.startsWith(base)) { res.statusCode = 403; return res.end('outside mount') }
 
         if (req.method === 'PUT') {
+          const rel = path.relative(base, file)
+          const inProject = mount === '/projects/' && /^[A-Za-z0-9][\w.-]{0,63}\//.test(rel) && readProject(rel.split('/')[0])
           const writable = (mount === '/work/' && file.endsWith('anchors.json')) || (mount === '/shots/' && file.endsWith('.animation.md'))
-          if (!writable) { res.statusCode = 405; return res.end('only work/**/anchors.json and shots/*.animation.md are writable') }
+            || (inProject && (/^[^/]+\/project\.json$/.test(rel) || /^[^/]+\/work\/.*anchors\.json$/.test(rel) || /^[^/]+\/shots\/[^/]+\.animation\.md$/.test(rel)))
+          if (!writable) { res.statusCode = 405; return res.end('only anchors.json under work/, shots/*.animation.md and a project\'s project.json are writable') }
           const body = await readBody(req)
           try { JSON.parse(body) } catch { res.statusCode = 400; return res.end('not JSON') }
           fs.mkdirSync(path.dirname(file), { recursive: true })

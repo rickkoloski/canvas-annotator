@@ -10,6 +10,7 @@ const params = new URLSearchParams(window.location.search)
 export default function App() {
   const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') ? 'frames' : 'vector'))
   const [shot, setShot] = useState(params.get('shot') ?? '')
+  const project = params.get('project') ?? undefined   // app frame A1: shots live in projects/<name>/; absent = legacy video-fx mounts
   const [drawing, setDrawing] = useState(true)
   const [img, setImg] = useState<{ src: string; w: number; h: number } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -48,7 +49,7 @@ export default function App() {
       </header>
 
       {mode === 'frames' ? (
-        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} />
+        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} />
       ) : (
         <>
           <div data-testid="canvas" onClick={picker.onCanvasClick} className={`rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
