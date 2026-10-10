@@ -17,6 +17,8 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null)
   const [pathDlg, setPathDlg] = useState(false); const [busy, setBusy] = useState(''); const [err, setErr] = useState(''); const [over, setOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('canvas-annotator.mediaBinCollapsed') === '1' } catch { return false } })
+  const toggleCollapsed = () => setCollapsed((c) => { try { localStorage.setItem('canvas-annotator.mediaBinCollapsed', c ? '0' : '1') } catch { /* no storage */ } return !c })
 
   const refreshInfo = () => mediaInfo(project.name).then(setInfo).catch(() => setInfo({}))
   useEffect(() => { void refreshInfo() }, [project.name, project.media.length, project.modified])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -49,10 +51,17 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
     return <div style={{ height: h }} className="flex items-center justify-center rounded bg-black/40 font-ws-mono text-xs text-ws-text-tertiary">{kind === 'audio' ? '♪' : '▤'} {m.type.split('/')[1]}</div>
   }
 
+  if (collapsed) return (
+    <aside data-testid="media-tab" className="shrink-0 glass rounded-2xl p-2 self-start sticky top-4 flex flex-col items-center gap-2">
+      <button data-testid="media-expand" onClick={toggleCollapsed} className="ann-btn" title="Show the Media tab">▸</button>
+      <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage" style={{ writingMode: 'vertical-rl' }}>Media · {project.media.length}</span>
+    </aside>
+  )
   return (
     <aside data-testid="media-tab" className="w-72 shrink-0 flex flex-col gap-2 glass rounded-2xl p-3 self-start sticky top-4 max-h-[calc(100vh-2rem)] overflow-hidden"
       onDragOver={(e) => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); importFiles(e.dataTransfer.files) }}>
-      <div className="flex gap-1">
+      <div className="flex gap-1 items-center">
+        <button data-testid="media-collapse" onClick={toggleCollapsed} className="ann-btn !px-1.5" title="Hide the Media tab (the canvas gets the width)">◂</button>
         <button data-testid="tab-media-bin" onClick={() => setTab('bin')} className={`ann-chip !text-xs ${tab === 'bin' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>Media Bin</button>
         <button data-testid="tab-library" onClick={() => setTab('library')} className={`ann-chip !text-xs ${tab === 'library' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>Library</button>
       </div>

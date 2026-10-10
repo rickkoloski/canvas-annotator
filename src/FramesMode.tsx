@@ -67,7 +67,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
       await loadRefined()
     }).catch((e) => setError(String(e.message ?? e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shot])
+  }, [shot, project])   // A4: the project decides the work path
 
   const cur = manifest?.frames[idx]
   const space = useMemo(() => createSvgSpace(() => svgRef.current), [])

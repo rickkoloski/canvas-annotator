@@ -61,6 +61,14 @@ export function AppFrame({ project, dirty, onSave, shot, view, error }: {
         {dirty && <span data-testid="unsaved-dot" title="unsaved changes" className="text-ws-terracotta-text">●</span>}
       </span>
       {project && <span className="font-ws-mono text-[0.65rem] text-ws-text-tertiary">{project.canvas.width}×{project.canvas.height} · {project.canvas.fps} fps · {project.media.length} media · {project.shots.length} shot{project.shots.length === 1 ? '' : 's'}</span>}
+      {project && project.shots.length > 0 && (
+        <label className="flex items-center gap-1 font-ws-mono text-xs text-ws-text-tertiary">shot
+          <select data-testid="shot-select" value={project.shots.includes(shot) ? shot : ''} onChange={(e) => guarded(() => go(pageUrl(project.name, e.target.value, view)))} className="ann-btn">
+            <option value="">{shot && !project.shots.includes(shot) ? shot : '(choose)'}</option>
+            {project.shots.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+      )}
       {msg && <span data-testid="frame-status" className="font-ws-mono text-xs text-ws-sage">{msg}</span>}
       {error && <span data-testid="frame-error" className="font-ws-mono text-xs text-ws-terracotta-text">{error}</span>}
 
