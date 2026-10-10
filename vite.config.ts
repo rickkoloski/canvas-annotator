@@ -42,6 +42,8 @@ function vidfxBridge(): Plugin {
   const SAFE_NAME = /^[A-Za-z0-9][\w.-]{0,63}$/
   const CREATIVE = (process.env.CREATIVE_ROOT ?? path.join(os.homedir(), 'src/ops/creative')).replace(/^~/, os.homedir())
   let studio: { proc: import('node:child_process').ChildProcess; url: string; key: string } | null = null
+  const stopStudio = () => { if (studio) { try { process.kill(-(studio.proc.pid as number), 'SIGTERM') } catch { studio.proc.kill() } studio = null } }
+  process.on('exit', stopStudio)
   const LIBRARY = (process.env.LIBRARY_ROOT ?? path.join(os.homedir(), 'src/ops/creative/library')).replace(/^~/, os.homedir())
   const readLibrary = () => { try { return JSON.parse(fs.readFileSync(path.join(LIBRARY, 'library.json'), 'utf8')) } catch { return { version: 1, items: [] } } }
   const writeLibrary = (doc: unknown) => { fs.mkdirSync(LIBRARY, { recursive: true }); fs.writeFileSync(path.join(LIBRARY, 'library.json'), JSON.stringify(doc, null, 2)) }
@@ -188,7 +190,7 @@ function vidfxBridge(): Plugin {
           res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
         }
         if (url === '/remotion/run' || url === '/remotion/studio') {
-          if (url === '/remotion/studio' && req.method === 'DELETE') { if (studio) { studio.proc.kill(); studio = null } res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ ok: true })) }
+          if (url === '/remotion/studio' && req.method === 'DELETE') { stopStudio(); res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ ok: true })) }
           if (req.method !== 'POST') { res.statusCode = 405; return res.end() }
           let body: { project?: string; anim?: string; op?: string; frame?: number; scale?: number }
           try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
@@ -201,8 +203,8 @@ function vidfxBridge(): Plugin {
           if (url === '/remotion/studio') {
             const key = `${project}/${anim}`
             if (studio && studio.key === key && studio.proc.exitCode === null) { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ url: studio.url, running: true })) }
-            if (studio) { studio.proc.kill(); studio = null }
-            const port = 3005; const proc = spawn(REMOTION, ['studio', entry, '--public-dir', publicDir, '--port', String(port), '--no-open'], { cwd: CREATIVE })
+            stopStudio()
+            const port = 3005; const proc = spawn(REMOTION, ['studio', entry, '--public-dir', publicDir, '--port', String(port), '--no-open'], { cwd: CREATIVE, detached: true })   // own process group: the stop kills the launcher AND its node child
             studio = { proc, url: `http://localhost:${port}`, key }
             let log = ''; proc.stdout.on('data', (d) => { log += d }); proc.stderr.on('data', (d) => { log += d })
             const t0 = Date.now()
