@@ -28,6 +28,11 @@ import { spawn, spawnSync } from 'node:child_process'
  *   Library (A6, Camtasia's cross-project store): LIBRARY_ROOT=~/src/ops/creative/library (library.json + <folder>/<file>).
  *   GET /library; POST /library/add {project, id, folder} copies a bin item in; DELETE /library/<id>; GET /library/thumb/<id>;
  *   POST /projects/<name>/media/from-library {id} copies a library item into the project's bin.
+ *   Animations (A5b, Remotion brownfield: entry file per animation, toolchain at CREATIVE_ROOT=~/src/ops/creative):
+ *   POST /projects/<name>/animations {name} copies animations/_template; PUT …/animations/<anim>/props.json writable;
+ *   POST /remotion/run {project, anim, op: render|still, frame?} streams the CLI (render → renders/<anim>_draft.mp4,
+ *   still → work/<anim>/still_<frame>.png); POST /remotion/studio {project, anim} starts Studio on :3005 (one at a time),
+ *   DELETE /remotion/studio stops it.
  */
 function vidfxBridge(): Plugin {
   const ROOT = (process.env.VIDFX_ROOT ?? path.join(os.homedir(), 'src/ops/creative/video-fx')).replace(/^~/, os.homedir())
@@ -35,6 +40,8 @@ function vidfxBridge(): Plugin {
   const PROJECTS = (process.env.PROJECTS_ROOT ?? path.join(os.homedir(), 'src/ops/creative/projects')).replace(/^~/, os.homedir())
   const MOUNTS: Record<string, string> = { '/work/': path.join(ROOT, 'work'), '/renders/': path.join(ROOT, 'renders'), '/shots/': path.join(ROOT, 'shots'), '/projects/': PROJECTS }
   const SAFE_NAME = /^[A-Za-z0-9][\w.-]{0,63}$/
+  const CREATIVE = (process.env.CREATIVE_ROOT ?? path.join(os.homedir(), 'src/ops/creative')).replace(/^~/, os.homedir())
+  let studio: { proc: import('node:child_process').ChildProcess; url: string; key: string } | null = null
   const LIBRARY = (process.env.LIBRARY_ROOT ?? path.join(os.homedir(), 'src/ops/creative/library')).replace(/^~/, os.homedir())
   const readLibrary = () => { try { return JSON.parse(fs.readFileSync(path.join(LIBRARY, 'library.json'), 'utf8')) } catch { return { version: 1, items: [] } } }
   const writeLibrary = (doc: unknown) => { fs.mkdirSync(LIBRARY, { recursive: true }); fs.writeFileSync(path.join(LIBRARY, 'library.json'), JSON.stringify(doc, null, 2)) }
@@ -164,6 +171,63 @@ function vidfxBridge(): Plugin {
           res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
         }
 
+        // ── Animations (A5b) ──
+        const am = /^\/projects\/([A-Za-z0-9][\w.-]{0,63})\/animations$/.exec(url)
+        if (am && req.method === 'POST') {
+          const project = am[1]; const doc = readProject(project); if (!doc) { res.statusCode = 404; return res.end('unknown project') }
+          let body: { name?: string }; try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+          const name = body.name ?? ''; if (!SAFE_NAME.test(name)) { res.statusCode = 400; return res.end('bad animation name') }
+          const dir = path.join(PROJECTS, project, 'animations', name); if (fs.existsSync(dir)) { res.statusCode = 409; return res.end('animation exists') }
+          const tpl = path.join(CREATIVE, 'animations', '_template'); if (!fs.existsSync(tpl)) { res.statusCode = 500; return res.end(`no template at ${tpl}`) }
+          fs.cpSync(tpl, dir, { recursive: true })
+          const props = JSON.parse(fs.readFileSync(path.join(dir, 'props.json'), 'utf8'))
+          props.id = name.replace(/(^|[-_.])(\w)/g, (_m: string, _s: string, c: string) => c.toUpperCase()); props.title = name
+          props.width = doc.canvas?.width ?? props.width; props.height = doc.canvas?.height ?? props.height; props.fps = doc.canvas?.fps ?? props.fps
+          fs.writeFileSync(path.join(dir, 'props.json'), JSON.stringify(props, null, 2))
+          doc.animations = [...(doc.animations ?? []), name]; doc.modified = new Date().toISOString(); writeProject(project, doc)
+          res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
+        }
+        if (url === '/remotion/run' || url === '/remotion/studio') {
+          if (url === '/remotion/studio' && req.method === 'DELETE') { if (studio) { studio.proc.kill(); studio = null } res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ ok: true })) }
+          if (req.method !== 'POST') { res.statusCode = 405; return res.end() }
+          let body: { project?: string; anim?: string; op?: string; frame?: number; scale?: number }
+          try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+          const { project = '', anim = '', op = 'render', frame = 0, scale = 0.5 } = body
+          if (!SAFE_NAME.test(project) || !readProject(project) || !SAFE_NAME.test(anim)) { res.statusCode = 400; return res.end('unknown project or animation') }
+          const adir = path.join(PROJECTS, project, 'animations', anim); const entry = path.join(adir, 'index.tsx'); const propsFile = path.join(adir, 'props.json')
+          if (!fs.existsSync(entry) || !fs.existsSync(propsFile)) { res.statusCode = 404; return res.end('no such animation') }
+          const compId = String(JSON.parse(fs.readFileSync(propsFile, 'utf8')).id); const publicDir = path.join(PROJECTS, project, 'media')
+          const REMOTION = path.join(CREATIVE, 'node_modules', '.bin', 'remotion')
+          if (url === '/remotion/studio') {
+            const key = `${project}/${anim}`
+            if (studio && studio.key === key && studio.proc.exitCode === null) { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ url: studio.url, running: true })) }
+            if (studio) { studio.proc.kill(); studio = null }
+            const port = 3005; const proc = spawn(REMOTION, ['studio', entry, '--public-dir', publicDir, '--port', String(port), '--no-open'], { cwd: CREATIVE })
+            studio = { proc, url: `http://localhost:${port}`, key }
+            let log = ''; proc.stdout.on('data', (d) => { log += d }); proc.stderr.on('data', (d) => { log += d })
+            const t0 = Date.now()
+            await new Promise<void>((resolve) => { const iv = setInterval(() => { if (/localhost:\d+|Server ready|ready/i.test(log) || proc.exitCode !== null || Date.now() - t0 > 45000) { clearInterval(iv); resolve() } }, 250) })
+            if (proc.exitCode !== null) { studio = null; res.statusCode = 500; return res.end(`studio exited: ${log.slice(-600)}`) }
+            res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ url: studio.url, running: true }))
+          }
+          let argv: string[]; let out: string
+          if (op === 'still') {
+            fs.mkdirSync(path.join(PROJECTS, project, 'work', anim), { recursive: true }); out = path.join(PROJECTS, project, 'work', anim, `still_${frame}.png`)
+            argv = ['still', entry, compId, out, '--frame', String(frame), '--public-dir', publicDir, '--props', propsFile, '--log=error']
+          } else {
+            fs.mkdirSync(path.join(PROJECTS, project, 'renders'), { recursive: true }); out = path.join(PROJECTS, project, 'renders', `${anim}_draft.mp4`)
+            argv = ['render', entry, compId, out, '--public-dir', publicDir, '--props', propsFile, '--scale', String(scale), '--log=error']
+          }
+          res.statusCode = 200; res.setHeader('content-type', 'text/plain; charset=utf-8'); res.setHeader('cache-control', 'no-store')
+          res.write(`$ remotion ${argv.join(' ')}\n`)
+          const child = spawn(REMOTION, argv, { cwd: CREATIVE })
+          child.stdout.on('data', (d) => res.write(d)); child.stderr.on('data', (d) => res.write(d))
+          child.on('close', (code) => res.end(`\nout ${path.relative(path.join(PROJECTS, project), out)}\nexit ${code}\n`))
+          child.on('error', (e) => res.end(`\nerror ${e.message}\nexit 127\n`))
+          req.on('close', () => { if (child.exitCode === null) child.kill() })
+          return
+        }
+
         // ── Library (A6) ──
         const lm = /^\/library(?:\/(add|thumb)|\/([^/]+))?(?:\/([^/]+))?$/.exec(url)
         if (lm) {
@@ -264,7 +328,7 @@ function vidfxBridge(): Plugin {
           const rel = path.relative(base, file)
           const inProject = mount === '/projects/' && /^[A-Za-z0-9][\w.-]{0,63}\//.test(rel) && readProject(rel.split('/')[0])
           const writable = (mount === '/work/' && file.endsWith('anchors.json')) || (mount === '/shots/' && file.endsWith('.animation.md'))
-            || (inProject && (/^[^/]+\/project\.json$/.test(rel) || /^[^/]+\/work\/.*anchors\.json$/.test(rel) || /^[^/]+\/shots\/[^/]+\.animation\.md$/.test(rel)))
+            || (inProject && (/^[^/]+\/project\.json$/.test(rel) || /^[^/]+\/work\/.*anchors\.json$/.test(rel) || /^[^/]+\/shots\/[^/]+\.animation\.md$/.test(rel) || /^[^/]+\/animations\/[^/]+\/props\.json$/.test(rel)))
           if (!writable) { res.statusCode = 405; return res.end('only anchors.json under work/, shots/*.animation.md and a project\'s project.json are writable') }
           const body = await readBody(req)
           try { JSON.parse(body) } catch { res.statusCode = 400; return res.end('not JSON') }

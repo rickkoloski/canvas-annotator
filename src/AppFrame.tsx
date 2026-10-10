@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { createProject, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
+import { createAnimation, createProject, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
 
 /**
  * App frame A2 (plans/2026-10-10_app-frame.md): the File menu and project bar, with Camtasia's names:
  * New Project…, Open Project…, Open Recent, Save (⌘S), Save As…, Close Project. Explicit saves with an
  * unsaved dot (Rick, decision 5). Dialogs are in-page; nothing uses window.alert/confirm/prompt.
  */
-export function AppFrame({ project, dirty, onSave, shot, view, error }: {
-  project: ProjectDoc | null; dirty: boolean; onSave: () => Promise<boolean>; shot: string; view: string; error?: string
+export function AppFrame({ project, dirty, onSave, shot, view, error, anim }: {
+  project: ProjectDoc | null; dirty: boolean; onSave: () => Promise<boolean>; shot: string; view: string; error?: string; anim?: string
 }) {
   const [open, setOpen] = useState(false)
-  const [dialog, setDialog] = useState<null | 'new' | 'open' | 'saveas' | { unsaved: () => void }>(null)
+  const [dialog, setDialog] = useState<null | 'new' | 'open' | 'saveas' | 'newanim' | { unsaved: () => void }>(null)
   const [msg, setMsg] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const recent = readRecent()
@@ -51,6 +51,8 @@ export function AppFrame({ project, dirty, onSave, shot, view, error }: {
             {item('file-save', 'Save', () => { setOpen(false); void save() }, '⌘S')}
             {item('file-saveas', 'Save As…', () => { setOpen(false); setDialog('saveas') }, undefined, !project)}
             <div className="my-1 border-t border-ws-border-subtle" />
+            {item('file-newanim', 'New Animation…', () => { setOpen(false); setDialog('newanim') }, 'Remotion', !project)}
+            <div className="my-1 border-t border-ws-border-subtle" />
             {item('file-close', 'Close Project', () => guarded(() => go(pageUrl(null))), undefined, !project)}
           </div>
         )}
@@ -61,6 +63,14 @@ export function AppFrame({ project, dirty, onSave, shot, view, error }: {
         {dirty && <span data-testid="unsaved-dot" title="unsaved changes" className="text-ws-terracotta-text">●</span>}
       </span>
       {project && <span className="font-ws-mono text-[0.65rem] text-ws-text-tertiary">{project.canvas.width}×{project.canvas.height} · {project.canvas.fps} fps · {project.media.length} media · {project.shots.length} shot{project.shots.length === 1 ? '' : 's'}</span>}
+      {project && (project.animations?.length ?? 0) > 0 && (
+        <label className="flex items-center gap-1 font-ws-mono text-xs text-ws-text-tertiary">animation
+          <select data-testid="anim-select" value={anim && project.animations?.includes(anim) ? anim : ''} onChange={(e) => guarded(() => go(e.target.value ? pageUrl(project.name, undefined, undefined, e.target.value) : pageUrl(project.name, shot, view)))} className="ann-btn">
+            <option value="">(none)</option>
+            {project.animations?.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </label>
+      )}
       {project && project.shots.length > 0 && (
         <label className="flex items-center gap-1 font-ws-mono text-xs text-ws-text-tertiary">shot
           <select data-testid="shot-select" value={project.shots.includes(shot) ? shot : ''} onChange={(e) => guarded(() => go(pageUrl(project.name, e.target.value, view)))} className="ann-btn">
@@ -74,6 +84,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error }: {
 
       {dialog === 'new' && <NewProjectDialog onClose={() => setDialog(null)} onCreate={async (name, canvas) => { const p = await createProject(name, canvas); rememberRecent(p.name); go(pageUrl(p.name)) }} />}
       {dialog === 'open' && <OpenProjectDialog onClose={() => setDialog(null)} onOpen={(n) => { rememberRecent(n); go(pageUrl(n)) }} />}
+      {dialog === 'newanim' && project && <NewAnimationDialog onClose={() => setDialog(null)} onCreate={async (name) => { await createAnimation(project.name, name); go(pageUrl(project.name, undefined, undefined, name)) }} />}
       {dialog === 'saveas' && project && <SaveAsDialog from={project.name} onClose={() => setDialog(null)} onSaved={(n) => { rememberRecent(n); go(pageUrl(n, shot, view)) }} />}
       {dialog && typeof dialog === 'object' && (
         <Modal title="Unsaved changes" testid="dialog-unsaved" onClose={() => setDialog(null)}>
@@ -156,6 +167,21 @@ function SaveAsDialog({ from, onClose, onSaved }: { from: string; onClose: () =>
       {err && <div className="text-xs text-ws-terracotta-text mb-2">{err}</div>}
       <div className="flex gap-2 justify-end"><button className="ann-btn" onClick={onClose}>Cancel</button>
         <button data-testid="saveas-go" disabled={!ok || busy} onClick={() => void submit()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{busy ? 'copying…' : 'Save As'}</button></div>
+    </Modal>
+  )
+}
+
+function NewAnimationDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => Promise<void> }) {
+  const [name, setName] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false)
+  const ok = SAFE_NAME.test(name)
+  const submit = async () => { if (!ok || busy) return; setBusy(true); try { await onCreate(name) } catch (e) { setErr(String((e as Error).message ?? e)); setBusy(false) } }
+  return (
+    <Modal title="New Animation" testid="dialog-newanim" onClose={onClose}>
+      <p className="text-xs text-ws-text-secondary mb-2">A Remotion animation inside this project: <span className="font-ws-mono">animations/&lt;name&gt;/</span> with its entry file and props.json, copied from the brand template. Media comes from this project's Media Bin.</p>
+      <input data-testid="newanim-name" autoFocus value={name} onChange={(e) => setName(e.target.value.trim())} onKeyDown={(e) => { if (e.key === 'Enter') void submit() }} placeholder="laptop-intro" className={`${inp} w-full mb-3`} />
+      {err && <div className="text-xs text-ws-terracotta-text mb-2">{err}</div>}
+      <div className="flex gap-2 justify-end"><button className="ann-btn" onClick={onClose}>Cancel</button>
+        <button data-testid="newanim-create" disabled={!ok || busy} onClick={() => void submit()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{busy ? 'creating…' : 'Create'}</button></div>
     </Modal>
   )
 }

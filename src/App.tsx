@@ -5,14 +5,16 @@ import { loadProject, rememberRecent, saveProject, withShot, type ProjectDoc } f
 import { AnnotatorPanel, createSvgSpace, useShapePicker } from './lib/canvas-annotator'
 import { DemoVectorCanvas, ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
 import { FramesMode } from './FramesMode'
+import { AnimationMode } from './AnimationMode'
 
 type Mode = 'vector' | 'image' | 'frames'
 
 const params = new URLSearchParams(window.location.search)
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') ? 'frames' : 'vector'))
+  const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') || params.get('anim') ? 'frames' : 'vector'))
   const [shot, setShot] = useState(params.get('shot') ?? '')
+  const anim = params.get('anim') ?? undefined          // app frame A5b: an animation in the project
   const project = params.get('project') ?? undefined   // app frame A1: shots live in projects/<name>/; absent = legacy video-fx mounts
   // app frame A2: the project document, the unsaved dot, one Save for project.json + the shot's anchors
   const [proj, setProj] = useState<ProjectDoc | null>(null); const [projError, setProjError] = useState('')
@@ -51,7 +53,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen p-6 mx-auto ${proj ? 'max-w-[1760px]' : 'max-w-[1400px]'}`}>
-      <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} />
+      <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} />
       <div className="flex gap-4 items-start">
       {proj && <MediaBin project={proj} onProject={setProj} />}
       <div className="flex-1 min-w-0">
@@ -69,7 +71,9 @@ export default function App() {
         </div>
       </header>
 
-      {mode === 'frames' ? (
+      {anim && proj ? (
+        <AnimationMode projectDoc={proj} anim={anim} onProject={setProj} />
+      ) : mode === 'frames' ? (
         <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} projectDoc={proj} onProject={setProj} saveTick={saveTick} onDirty={setShotDirty} onView={setView} />
       ) : (
         <>

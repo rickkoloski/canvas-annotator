@@ -18,7 +18,8 @@ export type ProjectDoc = {
   canvas: Canvas
   media: MediaItem[]
   shots: string[]
-  recent?: { shot?: string; view?: string }
+  animations?: string[]          // A5b: projects/<name>/animations/<anim>/ (Remotion entry files)
+  recent?: { shot?: string; view?: string; anim?: string }
 }
 export type ProjectSummary = { name: string; modified: string; canvas: Canvas; shots: number; media: number }
 
@@ -104,11 +105,19 @@ export function rememberRecent(name: string) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(pushRecent(readRecent(), name))) } catch { /* private window, blocked storage */ }
 }
 
-/** The page URL for a project (and shot); `null` project = the legacy page. */
-export function pageUrl(project: string | null, shot?: string, view?: string): string {
+/** The page URL for a project (and shot, or an animation); `null` project = the legacy page. */
+export function pageUrl(project: string | null, shot?: string, view?: string, anim?: string): string {
   const q = new URLSearchParams()
   if (project) q.set('project', project)
-  if (shot) q.set('shot', shot)
-  if (view && view !== 'frames') q.set('view', view)
+  if (anim) q.set('anim', anim)
+  else if (shot) q.set('shot', shot)
+  if (!anim && view && view !== 'frames') q.set('view', view)
   const s = q.toString(); return s ? `/?${s}` : '/'
+}
+
+/** A5b: File › New Animation… copies animations/_template into projects/<name>/animations/<anim>/ (bridge). */
+export async function createAnimation(project: string, name: string): Promise<ProjectDoc> {
+  const r = await fetch(`${bridgePaths(project).root}/animations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) })
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+  return validateProject(await r.json())
 }
