@@ -10,6 +10,7 @@ export type MediaItem = {
   id: string; file: string; type: string; added: string
   width?: number; height?: number; fps?: number; duration?: number
   source?: string           // where it was imported from
+  size?: number             // bytes
   linked?: boolean          // true = not copied into media/ (chain badge; may go "missing")
 }
 export type ProjectDoc = {

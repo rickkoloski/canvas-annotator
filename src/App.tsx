@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppFrame } from './AppFrame'
+import { MediaBin } from './MediaBin'
 import { loadProject, rememberRecent, saveProject, withShot, type ProjectDoc } from './project'
 import { AnnotatorPanel, createSvgSpace, useShapePicker } from './lib/canvas-annotator'
 import { DemoVectorCanvas, ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
@@ -49,8 +50,11 @@ export default function App() {
   )
 
   return (
-    <div className="min-h-screen p-6 max-w-[1400px] mx-auto">
+    <div className={`min-h-screen p-6 mx-auto ${proj ? 'max-w-[1760px]' : 'max-w-[1400px]'}`}>
       <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} />
+      <div className="flex gap-4 items-start">
+      {proj && <MediaBin project={proj} onProject={setProj} />}
+      <div className="flex-1 min-w-0">
       <header className="flex flex-wrap items-center gap-3 mb-4">
         <h1 className="font-ws-mono text-ws-terracotta-text text-lg">canvas-annotator</h1>
         <span className="text-ws-text-tertiary text-sm">click a canvas to drop named anchors in its own units; copy them out</span>
@@ -79,6 +83,8 @@ export default function App() {
           {drawing && <AnnotatorPanel picker={picker} />}
         </>
       )}
+      </div>
+      </div>
     </div>
   )
 }
