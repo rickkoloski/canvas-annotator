@@ -21,7 +21,8 @@ async function runRemotion(body: Record<string, unknown>, onChunk: (s: string) =
 export function AnimationMode({ projectDoc, anim, onProject }: { projectDoc: ProjectDoc; anim: string; onProject: (p: ProjectDoc) => void }) {
   const paths = bridgePaths(projectDoc.name); const adir = `${paths.root}/animations/${encodeURIComponent(anim)}`
   const [props, setProps] = useState<AnimProps | null>(null); const [err, setErr] = useState('')
-  const [frame, setFrame] = useState(12); const [stillKey, setStillKey] = useState(0); const [busy, setBusy] = useState(''); const [out, setOut] = useState('')
+  const [frame, setFrame] = useState(12); const [stillKey, setStillKey] = useState(0); const [shown, setShown] = useState<number | null>(null)   // shown = the frame whose still is on screen
+  const [busy, setBusy] = useState(''); const [out, setOut] = useState('')
   const [draft, setDraft] = useState(''); const [studio, setStudio] = useState(''); const [over, setOver] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -34,7 +35,7 @@ export function AnimationMode({ projectDoc, anim, onProject }: { projectDoc: Pro
   const still = async (f = frame) => {
     if (busy) return; setBusy('still'); setOut('')
     const code = await runRemotion({ project: projectDoc.name, anim, op: 'still', frame: f }, (s) => setOut((o) => o + s))
-    setBusy(''); if (code === 0) setStillKey((k) => k + 1)
+    setBusy(''); if (code === 0) { setShown(f); setStillKey((k) => k + 1) }
   }
   useEffect(() => { if (props) void still(frame) }, [props?.layers.length, props?.texts.length, frame])   // eslint-disable-line react-hooks/exhaustive-deps
   const save = async (next: AnimProps) => {
@@ -85,8 +86,9 @@ export function AnimationMode({ projectDoc, anim, onProject }: { projectDoc: Pro
       {err && <div data-testid="anim-error" className="text-xs text-ws-terracotta-text mb-2">{err}</div>}
       <div ref={canvasRef} data-testid="anim-canvas" onDragOver={(e) => { if (e.dataTransfer.types.some((t) => t === 'application/x-media-id' || t === 'application/x-library-id')) { e.preventDefault(); setOver(true) } }} onDragLeave={() => setOver(false)} onDrop={(e) => void onDrop(e)}
         className={`relative rounded-xl overflow-hidden border ${over ? 'border-ws-terracotta' : 'border-ws-border-subtle'} bg-black`} style={{ aspectRatio: `${props.width} / ${props.height}` }}>
-        <img data-testid="anim-still-img" src={`${paths.work(anim)}/still_${frame}.png?v=${stillKey}`} alt="" className="block w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.15' }} />
-        <div className="absolute bottom-1 right-2 font-ws-mono text-[0.6rem] text-ws-text-tertiary bg-black/50 px-1 rounded">preview = `remotion still` at frame {frame} · drop a Media Bin item to add a layer</div>
+        {shown !== null && <img data-testid="anim-still-img" src={`${paths.work(anim)}/still_${shown}.png?v=${stillKey}`} alt="" className="block w-full h-full object-contain" style={{ opacity: busy === 'still' ? 0.5 : 1 }} />}
+        {shown === null && <div className="absolute inset-0 flex items-center justify-center font-ws-mono text-xs text-ws-text-tertiary">{busy === 'still' ? 'rendering the preview…' : 'no preview yet'}</div>}
+        <div className="absolute bottom-1 right-2 font-ws-mono text-[0.6rem] text-ws-text-tertiary bg-black/50 px-1 rounded">preview = `remotion still` at frame {shown ?? frame} · drop a Media Bin item to add a layer</div>
       </div>
       <div data-testid="anim-layers" className="mt-2 flex flex-col gap-1 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
         <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">layers <span className="text-ws-text-tertiary normal-case tracking-normal">· props.json · Remotion Studio edits the same file</span></span>
