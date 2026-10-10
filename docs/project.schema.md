@@ -40,3 +40,10 @@ projects/<name>/
   serves `/projects/<name>/**`; only `project.json`, `work/**/anchors.json` and
   `shots/*.animation.md` are writable.
 - Without `?project=` the page uses the legacy `video-fx/{work,shots,renders}` mounts.
+
+## The Library (A6)
+
+`~/src/ops/creative/library/` is Camtasia's Library: assets shared by every project. `library.json` lists
+items (`id`, `file` relative to the library root as `<folder>/<file>`, `folder`, `type`, dimensions, `added`,
+`source` = `project:<name>/<id>`). *Add to Library…* copies a bin item in; *add to project* copies a library
+item into a project's bin (id kept, `source: library:<id>`), so a project stays standalone.

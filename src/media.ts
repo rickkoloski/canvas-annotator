@@ -3,6 +3,7 @@
  * Camtasia's vocabulary: Import Media, Media Bin views and Sort by, unused and missing media.
  */
 import { bridgePaths, validateProject, type MediaItem, type ProjectDoc } from './project'
+export type { MediaItem }
 
 export type MediaKind = 'image' | 'video' | 'audio' | 'other'
 export type SortBy = 'name' | 'type' | 'date' | 'size'
@@ -67,3 +68,20 @@ export async function mediaInfo(project: string): Promise<MediaInfo> {
 }
 /** URL of a thumbnail (jpg made by ffmpeg once; an svg is served as itself). */
 export function thumbUrl(project: string, m: MediaItem): string { return `${bridgePaths(project).root}/thumb/${encodeURIComponent(m.id)}?v=${encodeURIComponent(m.added)}` }
+
+
+// ── Library (A6): assets shared across projects (Camtasia: Media tab › Library) ──
+export type LibraryItem = MediaItem & { folder: string; exists?: boolean }
+export type LibraryDoc = { version: number; items: LibraryItem[] }
+export function libraryFolders(doc: LibraryDoc): string[] { return [...new Set(doc.items.map((i) => i.folder))].sort() }
+export const DEFAULT_FOLDERS = ['device-frames', 'brand', 'misc']
+export async function loadLibrary(): Promise<LibraryDoc> { const r = await fetch(`/library?v=${Date.now()}`); if (!r.ok) throw new Error(`${r.status} ${await r.text()}`); return r.json() }
+export async function addToLibrary(project: string, id: string, folder: string): Promise<LibraryDoc> {
+  const r = await fetch('/library/add', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, id, folder }) })
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`); return r.json()
+}
+export async function deleteLibraryItem(id: string): Promise<LibraryDoc> { const r = await fetch(`/library/${encodeURIComponent(id)}`, { method: 'DELETE' }); if (!r.ok) throw new Error(`${r.status} ${await r.text()}`); return r.json() }
+export async function addFromLibrary(project: string, id: string): Promise<ProjectDoc> {
+  return json(await fetch(`${bridgePaths(project).media}/from-library`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) }))
+}
+export function libraryThumbUrl(it: LibraryItem): string { return `/library/thumb/${encodeURIComponent(it.id)}?v=${encodeURIComponent(it.added)}` }

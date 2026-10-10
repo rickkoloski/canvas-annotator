@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MediaItem, ProjectDoc } from './project'
-import { addMediaFromPath, deleteMedia, fmtDuration, fmtSize, importMediaFiles, mediaInfo, mediaKind, renameMedia, sortMedia, thumbUrl, type MediaInfo, type SortBy, type View } from './media'
+import { addFromLibrary, addMediaFromPath, addToLibrary, deleteLibraryItem, deleteMedia, fmtDuration, fmtSize, importMediaFiles, libraryFolders, libraryThumbUrl, loadLibrary, mediaInfo, mediaKind, renameMedia, sortMedia, thumbUrl, DEFAULT_FOLDERS, type LibraryDoc, type LibraryItem, type MediaInfo, type SortBy, type View } from './media'
 
 /**
  * Media tab (app frame A3), Camtasia's Media Bin: Import Media (picker, drop, or a path on this Mac with
@@ -16,13 +16,19 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null)
   const [pathDlg, setPathDlg] = useState(false); const [busy, setBusy] = useState(''); const [err, setErr] = useState(''); const [over, setOver] = useState(false)
+  // A6: the Library (cross-project); loaded when its tab opens
+  const [lib, setLib] = useState<LibraryDoc>({ version: 1, items: [] }); const [libFolder, setLibFolder] = useState(''); const [libDlg, setLibDlg] = useState<string | null>(null)
+  const [libMenu, setLibMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const refreshLib = () => loadLibrary().then(setLib).catch((e) => setErr(String(e.message ?? e)))
+  useEffect(() => { if (tab === 'library') void refreshLib() }, [tab])
+  const libRun = async (label: string, f: () => Promise<LibraryDoc>) => { if (busy) return; setBusy(label); setErr(''); try { setLib(await f()) } catch (e) { setErr(String((e as Error).message ?? e)) } finally { setBusy('') } }
   const fileRef = useRef<HTMLInputElement>(null)
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('canvas-annotator.mediaBinCollapsed') === '1' } catch { return false } })
   const toggleCollapsed = () => setCollapsed((c) => { try { localStorage.setItem('canvas-annotator.mediaBinCollapsed', c ? '0' : '1') } catch { /* no storage */ } return !c })
 
   const refreshInfo = () => mediaInfo(project.name).then(setInfo).catch(() => setInfo({}))
   useEffect(() => { void refreshInfo() }, [project.name, project.media.length, project.modified])   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const h = () => setMenu(null); document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h) }, [])
+  useEffect(() => { const h = () => { setMenu(null); setLibMenu(null) }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h) }, [])
 
   const run = async (label: string, f: () => Promise<ProjectDoc>) => {
     if (busy) return; setBusy(label); setErr('')
@@ -65,7 +71,32 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
         <button data-testid="tab-media-bin" onClick={() => setTab('bin')} className={`ann-chip !text-xs ${tab === 'bin' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>Media Bin</button>
         <button data-testid="tab-library" onClick={() => setTab('library')} className={`ann-chip !text-xs ${tab === 'library' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>Library</button>
       </div>
-      {tab === 'library' && <div className="text-xs text-ws-text-tertiary p-2">Library (assets shared across projects: device frames, brand) arrives in A6.</div>}
+      {tab === 'library' && (<>
+        <div className="flex flex-wrap items-center gap-1">
+          <select data-testid="library-folder" value={libFolder} onChange={(e) => setLibFolder(e.target.value)} className="ann-btn" title="Folder">
+            <option value="">all folders</option>
+            {libraryFolders(lib).map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <span className="font-ws-mono text-[0.62rem] text-ws-text-tertiary ml-auto" data-testid="library-count">{lib.items.length} item{lib.items.length === 1 ? '' : 's'} · shared by every project</span>
+        </div>
+        {busy && <div className="text-xs text-ws-sage font-ws-mono">{busy}</div>}
+        {err && <div data-testid="library-error" className="text-xs text-ws-terracotta-text font-ws-mono">{err}</div>}
+        <div data-testid="library-list" className="flex-1 overflow-y-auto overflow-x-hidden rounded-lg p-1 grid gap-2 content-start" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          {lib.items.length === 0 && <div className="text-xs text-ws-text-tertiary p-3 text-center col-span-2">Empty. Right-click a Media Bin item › Add to Library…</div>}
+          {lib.items.filter((it) => !libFolder || it.folder === libFolder).map((it) => (
+            <div key={it.id} data-testid={`lib-${it.id}`} onContextMenu={(e) => { e.preventDefault(); setLibMenu({ id: it.id, x: e.clientX, y: e.clientY }) }} draggable
+              onDragStart={(e) => { e.dataTransfer.setData('application/x-library-id', it.id); e.dataTransfer.setData('text/plain', it.file) }}
+              className="min-w-0 rounded-lg p-1.5 border border-transparent hover:border-ws-border-strong flex flex-col gap-1">
+              {it.exists === false ? <div style={{ height: 72 }} className="flex items-center justify-center rounded bg-black/40 text-ws-terracotta-text text-xs">missing</div>
+                : mediaKind(it.type) === 'image' || mediaKind(it.type) === 'video' ? <img src={libraryThumbUrl(it)} alt="" style={{ height: 72 }} className="w-full object-contain rounded bg-black/40" />
+                : <div style={{ height: 72 }} className="flex items-center justify-center rounded bg-black/40 font-ws-mono text-xs text-ws-text-tertiary">{it.type.split('/')[1]}</div>}
+              <div className="font-ws-mono text-xs text-ws-text-primary truncate" title={it.file}>{it.id}</div>
+              <div className="font-ws-mono text-[0.6rem] text-ws-text-tertiary truncate">{it.folder} · {facts(it)}</div>
+              <button data-testid={`lib-add-${it.id}`} disabled={!!busy} onClick={() => void run('adding to project…', () => addFromLibrary(project.name, it.id))} className="ann-btn !text-[0.62rem]">add to project</button>
+            </div>
+          ))}
+        </div>
+      </>)}
       {tab === 'bin' && (<>
         <div className="flex flex-wrap items-center gap-1">
           <input ref={fileRef} data-testid="media-file-input" type="file" multiple className="hidden" onChange={(e) => { importFiles(e.target.files); e.target.value = '' }} />
@@ -116,12 +147,20 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
 
       {menu && (
         <div data-testid="media-menu" className="glass fixed z-[80] rounded-xl py-1 min-w-[160px] shadow-2xl" style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
-          {[['menu-rename', 'Rename', () => setRenaming({ id: menu.id, value: menu.id })], ['menu-delete', 'Delete', () => void del([menu.id])]].map(([tid, label, fn]) => (
+          {[['menu-rename', 'Rename', () => setRenaming({ id: menu.id, value: menu.id })], ['menu-add-library', 'Add to Library…', () => setLibDlg(menu.id)], ['menu-delete', 'Delete', () => void del([menu.id])]].map(([tid, label, fn]) => (
             <button key={tid as string} data-testid={tid as string} onClick={() => { setMenu(null); (fn as () => void)() }} className="block w-full text-left px-3 py-1.5 text-sm text-ws-text-primary hover:bg-[rgba(224,155,88,.18)]">{label as string}</button>
           ))}
           <div className="px-3 py-1 font-ws-mono text-[0.6rem] text-ws-text-tertiary truncate max-w-[260px]">{project.media.find((m) => m.id === menu.id)?.file}</div>
         </div>
       )}
+      {libMenu && (
+        <div data-testid="library-menu" className="glass fixed z-[80] rounded-xl py-1 min-w-[160px] shadow-2xl" style={{ left: libMenu.x, top: libMenu.y }} onMouseDown={(e) => e.stopPropagation()}>
+          <button data-testid="libmenu-add" onClick={() => { const id = libMenu.id; setLibMenu(null); void run('adding to project…', () => addFromLibrary(project.name, id)) }} className="block w-full text-left px-3 py-1.5 text-sm text-ws-text-primary hover:bg-[rgba(224,155,88,.18)]">Add to project</button>
+          <button data-testid="libmenu-delete" onClick={() => { const id = libMenu.id; setLibMenu(null); void libRun('deleting…', () => deleteLibraryItem(id)) }} className="block w-full text-left px-3 py-1.5 text-sm text-ws-text-primary hover:bg-[rgba(224,155,88,.18)]">Delete from Library</button>
+        </div>
+      )}
+      {libDlg && <AddToLibraryDialog id={libDlg} folders={[...new Set([...DEFAULT_FOLDERS, ...libraryFolders(lib)])]} onClose={() => setLibDlg(null)}
+        onAdd={async (folder) => { const id = libDlg; setLibDlg(null); await libRun('adding to Library…', () => addToLibrary(project.name, id, folder)); setTab('library') }} />}
       {pathDlg && <FromPathDialog onClose={() => setPathDlg(false)} onAdd={async (p, link) => { setPathDlg(false); await run(link ? 'linking…' : 'copying…', () => addMediaFromPath(project.name, p, link)) }} />}
     </aside>
   )
@@ -140,6 +179,27 @@ function FromPathDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (path:
         <label className="flex items-center gap-2 text-xs text-ws-text-secondary mb-3"><input data-testid="from-path-link" type="checkbox" checked={link} onChange={(e) => setLink(e.target.checked)} /> link instead of copying (⛓ badge; "missing" if the file moves)</label>
         <div className="flex gap-2 justify-end"><button className="ann-btn" onClick={onClose}>Cancel</button>
           <button data-testid="from-path-add" disabled={!p.trim()} onClick={() => void onAdd(p.trim(), link)} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{link ? 'Link' : 'Copy in'}</button></div>
+      </div>
+    </div>
+  )
+}
+
+
+function AddToLibraryDialog({ id, folders, onClose, onAdd }: { id: string; folders: string[]; onClose: () => void; onAdd: (folder: string) => Promise<void> }) {
+  const [folder, setFolder] = useState(folders[0] ?? 'misc'); const [custom, setCustom] = useState('')
+  const chosen = custom.trim() || folder; const ok = /^[A-Za-z0-9][\w.-]{0,63}$/.test(chosen)
+  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [onClose])
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center pt-24 bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div data-testid="dialog-add-library" className="glass rounded-2xl p-5 w-[440px] shadow-2xl">
+        <div className="font-ws-mono text-[0.62rem] tracking-[0.22em] uppercase text-ws-terracotta-text mb-3">Add to Library</div>
+        <p className="text-xs text-ws-text-secondary mb-2">A copy of <span className="font-ws-mono text-ws-text-primary">{id}</span> goes to the Library, shared by every project (Camtasia: Library › folder).</p>
+        <div className="flex items-center gap-2 mb-3 text-xs text-ws-text-secondary">folder
+          <select data-testid="add-library-folder" value={folder} onChange={(e) => setFolder(e.target.value)} className="ann-btn">{folders.map((f) => <option key={f} value={f}>{f}</option>)}</select>
+          <input data-testid="add-library-new" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="or a new folder" className="font-ws-mono text-xs bg-transparent text-ws-text-primary border border-ws-border-subtle rounded-lg px-2 py-1 outline-none focus:border-ws-terracotta w-36" />
+        </div>
+        <div className="flex gap-2 justify-end"><button className="ann-btn" onClick={onClose}>Cancel</button>
+          <button data-testid="add-library-go" disabled={!ok} onClick={() => void onAdd(chosen)} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">Add to Library</button></div>
       </div>
     </div>
   )

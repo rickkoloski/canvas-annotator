@@ -5,6 +5,7 @@ import { acceptRefined, buildAnchorsDoc, editEffects, hitVertex, listEffects, mo
 import { BeatsTab, MarkerStrip } from './BeatsMode'
 import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
 import { bridgePaths, type ProjectDoc } from './project'
+import { addFromLibrary } from './media'
 
 /** What the unsaved dot compares: shapes without UI-only fields, beats, meta, notes, decisions. */
 export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes: string[], decisions: unknown[]): string {
@@ -17,7 +18,7 @@ export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes:
  * Save → work/<shot>/anchors.json, an engine console (sample frames, track, crops, render)
  * through the dev bridge, and a results view.
  */
-export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView, projectDoc }: {
+export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView, projectDoc, onProject }: {
   shot: string; drawing: boolean; onShotChange: (s: string) => void; project?: string
   /** A2: bumped by the frame's Save (File › Save, ⌘S); the shot's anchors.json is written. */
   saveTick?: number
@@ -26,6 +27,8 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   onView?: (view: string) => void
   /** A5: the project document, for the Media Bin's items dropped onto the canvas. */
   projectDoc?: ProjectDoc | null
+  /** A6: a Library item dropped on the canvas is copied into the bin first; the host keeps the document. */
+  onProject?: (p: ProjectDoc) => void
 }) {
   const [manifest, setManifest] = useState<Manifest | null>(null)
   const [error, setError] = useState('')
@@ -53,9 +56,12 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   }
   const mediaUrl = (m: { id: string; file: string; linked?: boolean }) => (m.linked ? `${paths.root}/media-file/${encodeURIComponent(m.id)}` : `${paths.media}/${encodeURIComponent(m.file.split('/').pop() ?? m.file)}`)
   const onDropMedia = async (e: React.DragEvent) => {
-    const id = e.dataTransfer.getData('application/x-media-id'); if (!id || !projectDoc || !cur) return
+    let id = e.dataTransfer.getData('application/x-media-id'); const libId = e.dataTransfer.getData('application/x-library-id')
+    if ((!id && !libId) || !projectDoc || !cur) return
     e.preventDefault()
-    const m = projectDoc.media.find((x) => x.id === id); if (!m) return
+    let doc = projectDoc
+    if (libId) { doc = await addFromLibrary(projectDoc.name, libId); onProject?.(doc); id = doc.media[doc.media.length - 1]?.id ?? '' }
+    const m = doc.media.find((x) => x.id === id); if (!m) return
     const p = space.screenToCanvas(e.clientX, e.clientY); if (!p) return
     const image = m.linked ? m.file : `../media/${m.file.split('/').pop()}`
     await effectEdit('add', ['kind=overlay', `image=${image}`, `x=${(p.x / cur.width).toFixed(3)}`, `y=${(p.y / cur.height).toFixed(3)}`, 'width=0.3', `start=${cur.t.toFixed(2)}`, 'tracker=none'])
@@ -188,7 +194,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
 
       {view === 'frames' && manifest && cur && (
         <div style={drawing ? { marginRight: 360 } : undefined}>{/* the floating panel docks in this gutter; it must never cover the canvas */}
-          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.includes('application/x-media-id')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
+          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.includes('application/x-media-id') || e.dataTransfer.types.includes('application/x-library-id')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
             className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
             <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />
             {/* A5: static overlays previewed in place (tracked ones show in the engine's stills) */}

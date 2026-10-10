@@ -25,6 +25,9 @@ import { spawn, spawnSync } from 'node:child_process'
  *   project.json; POST …/media/from-path {path, link} copies or links a file on this Mac; POST …/media/<id>/rename {to};
  *   DELETE …/media/<id>; GET …/media-info (exists, usedBy shots); GET …/thumb/<id> (ffmpeg first frame, cached in
  *   media/.thumbs/); GET …/media-file/<id> streams a linked file. Every write returns the project document.
+ *   Library (A6, Camtasia's cross-project store): LIBRARY_ROOT=~/src/ops/creative/library (library.json + <folder>/<file>).
+ *   GET /library; POST /library/add {project, id, folder} copies a bin item in; DELETE /library/<id>; GET /library/thumb/<id>;
+ *   POST /projects/<name>/media/from-library {id} copies a library item into the project's bin.
  */
 function vidfxBridge(): Plugin {
   const ROOT = (process.env.VIDFX_ROOT ?? path.join(os.homedir(), 'src/ops/creative/video-fx')).replace(/^~/, os.homedir())
@@ -32,6 +35,9 @@ function vidfxBridge(): Plugin {
   const PROJECTS = (process.env.PROJECTS_ROOT ?? path.join(os.homedir(), 'src/ops/creative/projects')).replace(/^~/, os.homedir())
   const MOUNTS: Record<string, string> = { '/work/': path.join(ROOT, 'work'), '/renders/': path.join(ROOT, 'renders'), '/shots/': path.join(ROOT, 'shots'), '/projects/': PROJECTS }
   const SAFE_NAME = /^[A-Za-z0-9][\w.-]{0,63}$/
+  const LIBRARY = (process.env.LIBRARY_ROOT ?? path.join(os.homedir(), 'src/ops/creative/library')).replace(/^~/, os.homedir())
+  const readLibrary = () => { try { return JSON.parse(fs.readFileSync(path.join(LIBRARY, 'library.json'), 'utf8')) } catch { return { version: 1, items: [] } } }
+  const writeLibrary = (doc: unknown) => { fs.mkdirSync(LIBRARY, { recursive: true }); fs.writeFileSync(path.join(LIBRARY, 'library.json'), JSON.stringify(doc, null, 2)) }
   const readProject = (name: string) => { try { return JSON.parse(fs.readFileSync(path.join(PROJECTS, name, 'project.json'), 'utf8')) } catch { return null } }
   const TYPES: Record<string, string> = { '.json': 'application/json', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.yaml': 'text/yaml', '.npy': 'application/octet-stream', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.gif': 'image/gif', '.webp': 'image/webp', '.md': 'text/markdown' }
@@ -65,10 +71,24 @@ function vidfxBridge(): Plugin {
   }
   const uniqueName = (dir: string, base: string) => { const ext = path.extname(base); const stem = base.slice(0, base.length - ext.length); let n = base, i = 2; while (fs.existsSync(path.join(dir, n))) n = `${stem}-${i++}${ext}`; return n }
   const mediaPath = (project: string, m: { file: string }) => (path.isAbsolute(m.file) ? m.file : path.join(PROJECTS, project, m.file))
+  /** A thumbnail (ffmpeg first frame, cached in tdir; an svg as itself) or the file itself. */
+  const sendThumb = (res: import('node:http').ServerResponse, src: string, m: { id: string; type?: string; duration?: number }, tdir: string, thumb: boolean) => {
+    if (!fs.existsSync(src)) { res.statusCode = 404; return res.end('missing') }
+    let file = src
+    if (thumb && m.type !== 'image/svg+xml') {
+      fs.mkdirSync(tdir, { recursive: true }); file = path.join(tdir, `${m.id}.jpg`)
+      if (!fs.existsSync(file) || fs.statSync(file).mtimeMs < fs.statSync(src).mtimeMs) {
+        const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-ss', m.duration ? String(Math.min(1, m.duration / 2)) : '0', '-i', src, '-frames:v', '1', '-vf', 'scale=320:-2', file])
+        if (r.status !== 0 || !fs.existsSync(file)) { res.statusCode = 415; return res.end('no thumbnail for this type') }
+      }
+    }
+    res.setHeader('content-type', TYPES[path.extname(file).toLowerCase()] ?? MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream'); res.setHeader('cache-control', 'no-store')
+    res.setHeader('content-length', String(fs.statSync(file).size)); return fs.createReadStream(file).pipe(res)
+  }
   const addMedia = (project: string, file: string, extra: Record<string, unknown>) => {
-    const doc = readProject(project); const rel = path.isAbsolute(file) ? file : path.relative(path.join(PROJECTS, project), file)
-    const base = path.basename(file); let id = base, i = 2; while ((doc.media ?? []).some((m: { id: string }) => m.id === id)) id = `${base}-${i++}`
-    const item = { id, file: rel, added: new Date().toISOString(), ...probeMedia(file), ...extra }
+    const doc = readProject(project); const rel = extra.linked ? file : path.relative(path.join(PROJECTS, project), file)   // copied → relative to the package; linked → absolute
+    const want = String(extra.id ?? path.basename(file)); let id = want, i = 2; while ((doc.media ?? []).some((m: { id: string }) => m.id === id)) id = `${want}-${i++}`
+    const item = { ...extra, id, file: rel, added: new Date().toISOString(), ...probeMedia(file) }
     doc.media = [...(doc.media ?? []), item]; doc.modified = item.added; writeProject(project, doc); return doc
   }
 
@@ -144,6 +164,37 @@ function vidfxBridge(): Plugin {
           res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
         }
 
+        // ── Library (A6) ──
+        const lm = /^\/library(?:\/(add|thumb)|\/([^/]+))?(?:\/([^/]+))?$/.exec(url)
+        if (lm) {
+          const lib = readLibrary(); lib.items = lib.items ?? []
+          const sendLib = (code = 200) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ ...lib, items: lib.items.map((it: { file: string }) => ({ ...it, exists: fs.existsSync(path.join(LIBRARY, it.file)) })) })) }
+          if (url === '/library' && req.method === 'GET') return sendLib()
+          if (lm[1] === 'add' && req.method === 'POST') {
+            let body: { project?: string; id?: string; folder?: string }; try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+            const { project, id, folder = 'misc' } = body
+            if (!project || !SAFE_NAME.test(project) || !readProject(project)) { res.statusCode = 400; return res.end('unknown project') }
+            if (!SAFE_NAME.test(folder)) { res.statusCode = 400; return res.end('bad folder') }
+            const m = (readProject(project).media ?? []).find((x: { id: string }) => x.id === id); if (!m) { res.statusCode = 404; return res.end('no such media') }
+            const src = mediaPath(project, m); if (!fs.existsSync(src)) { res.statusCode = 404; return res.end('media file missing') }
+            const fdir = path.join(LIBRARY, folder); fs.mkdirSync(fdir, { recursive: true })
+            const target = path.join(fdir, uniqueName(fdir, path.basename(src))); fs.copyFileSync(src, target)
+            let lid = m.id, i = 2; while (lib.items.some((x: { id: string }) => x.id === lid)) lid = `${m.id}-${i++}`
+            lib.items.push({ id: lid, file: path.relative(LIBRARY, target), folder, added: new Date().toISOString(), source: `project:${project}/${m.id}`, ...probeMedia(target) })
+            writeLibrary(lib); return sendLib(201)
+          }
+          if (lm[1] === 'thumb' && req.method === 'GET' && lm[3]) {
+            const it = lib.items.find((x: { id: string }) => x.id === decodeURIComponent(lm[3])); if (!it) { res.statusCode = 404; return res.end('no such library item') }
+            return sendThumb(res, path.join(LIBRARY, it.file), it, path.join(LIBRARY, '.thumbs'), true)
+          }
+          if (lm[2] && !lm[1] && req.method === 'DELETE') {
+            const lid = decodeURIComponent(lm[2]); const it = lib.items.find((x: { id: string }) => x.id === lid); if (!it) { res.statusCode = 404; return res.end('no such library item') }
+            const p = path.join(LIBRARY, it.file); if (p.startsWith(LIBRARY) && fs.existsSync(p)) fs.unlinkSync(p)
+            lib.items = lib.items.filter((x: { id: string }) => x.id !== lid); writeLibrary(lib); return sendLib()
+          }
+          res.statusCode = 405; return res.end()
+        }
+
         // ── Media Bin (A3) ──
         const mm = /^\/projects\/([A-Za-z0-9][\w.-]{0,63})\/(media|media-info|thumb|media-file)(?:\/([^/]+))?(?:\/(from-path|rename))?$/.exec(url)
         if (mm && !(mm[2] === 'media' && req.method === 'GET')) {
@@ -189,17 +240,15 @@ function vidfxBridge(): Plugin {
           }
           if ((mm[2] === 'thumb' || mm[2] === 'media-file') && req.method === 'GET' && mm[3]) {
             const m = find(); if (!m) { res.statusCode = 404; return res.end('no such media') }
-            const src = mediaPath(project, m); if (!fs.existsSync(src)) { res.statusCode = 404; return res.end('missing') }
-            let file = src
-            if (mm[2] === 'thumb' && m.type !== 'image/svg+xml') {
-              const tdir = path.join(mediaDir, '.thumbs'); fs.mkdirSync(tdir, { recursive: true }); file = path.join(tdir, `${m.id}.jpg`)
-              if (!fs.existsSync(file) || fs.statSync(file).mtimeMs < fs.statSync(src).mtimeMs) {
-                const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-ss', m.duration ? String(Math.min(1, m.duration / 2)) : '0', '-i', src, '-frames:v', '1', '-vf', 'scale=320:-2', file])
-                if (r.status !== 0 || !fs.existsSync(file)) { res.statusCode = 415; return res.end('no thumbnail for this type') }
-              }
-            }
-            res.setHeader('content-type', TYPES[path.extname(file).toLowerCase()] ?? MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream'); res.setHeader('cache-control', 'no-store')
-            res.setHeader('content-length', String(fs.statSync(file).size)); return fs.createReadStream(file).pipe(res)
+            return sendThumb(res, mediaPath(project, m), m, path.join(mediaDir, '.thumbs'), mm[2] === 'thumb')
+          }
+          if (mm[2] === 'media' && req.method === 'POST' && id === 'from-library' && !sub) {                 // A6: copy a Library item into the bin
+            let body: { id?: string }; try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+            const lib = readLibrary(); const it = (lib.items ?? []).find((x: { id: string }) => x.id === body.id)
+            if (!it) { res.statusCode = 404; return res.end('no such library item') }
+            const src = path.join(LIBRARY, it.file); if (!fs.existsSync(src)) { res.statusCode = 404; return res.end('library file missing') }
+            const target = path.join(mediaDir, uniqueName(mediaDir, path.basename(src))); fs.copyFileSync(src, target)
+            return sendDoc(addMedia(project, target, { id: it.id, source: `library:${it.id}` }), 201)
           }
           res.statusCode = 405; return res.end()
         }

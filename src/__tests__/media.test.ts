@@ -28,3 +28,10 @@ describe('media bin helpers (A3)', () => {
   })
   it('formats', () => { expect(fmtDuration(75.2)).toBe('1:15.2'); expect(fmtSize(144 * 1048576)).toBe('144.0 MB'); expect(fmtSize(603)).toBe('603 B') })
 })
+
+import { libraryFolders } from '../media'
+describe('library (A6)', () => {
+  it('libraryFolders lists folders once, sorted', () => {
+    expect(libraryFolders({ version: 1, items: [{ ...m('a', 'image/png', '1'), folder: 'misc' }, { ...m('b', 'image/svg+xml', '2'), folder: 'device-frames' }, { ...m('c', 'image/png', '3'), folder: 'misc' }] })).toEqual(['device-frames', 'misc'])
+  })
+})
