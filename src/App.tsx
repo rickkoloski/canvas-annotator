@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppFrame } from './AppFrame'
 import { MediaBin } from './MediaBin'
+import { EffectsPanel, ToolsRail, type Tool } from './ToolsRail'
 import { loadProject, rememberRecent, saveProject, withShot, type ProjectDoc } from './project'
 import { AnnotatorPanel, createSvgSpace, useShapePicker } from './lib/canvas-annotator'
 import { DemoVectorCanvas, ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
@@ -19,6 +20,11 @@ export default function App() {
   // app frame A2: the project document, the unsaved dot, one Save for project.json + the shot's anchors
   const [proj, setProj] = useState<ProjectDoc | null>(null); const [projError, setProjError] = useState('')
   const [shotDirty, setShotDirty] = useState(false); const [saveTick, setSaveTick] = useState(0); const [view, setView] = useState('frames')
+  // A7: the tools rail (Camtasia's left column); which group is open is a per-browser convenience
+  const [tool, setToolState] = useState<Tool | null>(() => { try { const v = localStorage.getItem('canvas-annotator.tool'); return v === 'none' ? null : ((v as Tool) || (params.get('project') ? 'media' : 'trackers')) } catch { return 'media' } })
+  const setTool = (t: Tool | null) => { setToolState(t); try { localStorage.setItem('canvas-annotator.tool', t ?? 'none') } catch { /* no storage */ } }
+  const [trackersSlot, setTrackersSlot] = useState<HTMLElement | null>(null)
+  const [trackers, setTrackers] = useState<{ id: string; kind: string }[]>([])
   useEffect(() => {
     if (!project) return
     loadProject(project).then((p) => { setProj(p); rememberRecent(p.name) }).catch((e) => setProjError(`cannot open project '${project}': ${String(e.message ?? e)}`))
@@ -52,10 +58,20 @@ export default function App() {
   )
 
   return (
-    <div className={`min-h-screen p-6 mx-auto ${proj ? 'max-w-[1760px]' : 'max-w-[1400px]'}`}>
+    <div className={`min-h-screen p-6 mx-auto ${proj || mode === 'frames' || anim ? 'max-w-[1760px]' : 'max-w-[1400px]'}`}>
       <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} />
       <div className="flex gap-4 items-start">
-      {proj && <MediaBin project={proj} onProject={setProj} />}
+      {(proj || mode === 'frames' || anim) && (
+        <ToolsRail tool={tool} onTool={setTool} groups={[
+          { id: 'media', label: 'Media', icon: '🎞', available: !!proj, why: 'open a project (File › New Project… or Open Project…)' },
+          { id: 'effects', label: 'Effects', icon: '✦', available: !!shot && !anim, why: 'open a shot' },
+          { id: 'trackers', label: 'Trackers', icon: '◎', available: !!shot && !anim && drawing, why: drawing ? 'open a shot' : 'turn drawing on' },
+        ]}>
+          {tool === 'media' && proj && <MediaBin project={proj} onProject={setProj} />}
+          {tool === 'effects' && <EffectsPanel trackers={trackers} />}
+          {tool === 'trackers' && <div ref={setTrackersSlot} data-testid="trackers-slot" className="flex flex-col min-h-0 overflow-y-auto" />}
+        </ToolsRail>
+      )}
       <div className="flex-1 min-w-0">
       <header className="flex flex-wrap items-center gap-3 mb-4">
         <h1 className="font-ws-mono text-ws-terracotta-text text-lg">canvas-annotator</h1>
@@ -74,7 +90,7 @@ export default function App() {
       {anim && proj ? (
         <AnimationMode projectDoc={proj} anim={anim} onProject={setProj} />
       ) : mode === 'frames' ? (
-        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} projectDoc={proj} onProject={setProj} saveTick={saveTick} onDirty={setShotDirty} onView={setView} />
+        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} projectDoc={proj} onProject={setProj} saveTick={saveTick} onDirty={setShotDirty} onView={setView} trackersSlot={tool === 'trackers' ? trackersSlot : null} onTrackers={setTrackers} />
       ) : (
         <>
           <div data-testid="canvas" onClick={picker.onCanvasClick} className={`rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>

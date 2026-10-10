@@ -63,6 +63,7 @@ export function AnnotatorPanel({
   onJumpFrame,
   onSelectTracker,
   selectedTracker,
+  docked = false,
 }: {
   picker: ShapePicker
   title?: string
@@ -74,6 +75,8 @@ export function AnnotatorPanel({
   /** T2: clicking a motion tracker's name selects it (the host uses it as the mark-beat target). */
   onSelectTracker?: (id: string) => void
   selectedTracker?: string
+  /** A7: render inside a host column (the tools rail) instead of as a floating, draggable window. */
+  docked?: boolean
 }) {
   const [min, setMin] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -89,17 +92,17 @@ export function AnnotatorPanel({
       : `${saved.length} saved`
 
   return (
-    <div data-testid="annotator-panel" style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 50, width: paused ? 220 : 340 }}>
+    <div data-testid="annotator-panel" style={docked ? { width: '100%' } : { position: 'fixed', left: pos.x, top: pos.y, zIndex: 50, width: paused ? 220 : 340 }}>
       <style>{PANEL_CSS}</style>
-      <div className="glass rounded-2xl shadow-2xl overflow-hidden">
-        {/* header / drag handle */}
+      <div className={docked ? 'overflow-hidden' : 'glass rounded-2xl shadow-2xl overflow-hidden'}>
+        {/* header / drag handle (docked: just a header) */}
         <div
-          {...handleProps}
+          {...(docked ? {} : handleProps)}
           className={`flex items-center justify-between px-4 py-2.5 select-none ${paused ? '' : 'border-b border-ws-border-subtle'}`}
         >
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-ws-text-tertiary text-base leading-none">⠿</span>
-            <span className="font-ws-mono text-[0.62rem] tracking-[0.22em] uppercase text-ws-terracotta-text whitespace-nowrap">{title}</span>
+            {!docked && <span className="text-ws-text-tertiary text-base leading-none">⠿</span>}
+            <span className={`font-ws-mono text-[0.62rem] tracking-[0.22em] uppercase text-ws-terracotta-text ${docked ? 'truncate' : 'whitespace-nowrap'}`} title={title}>{title}</span>
             {(min || paused) && <span className="text-[0.7rem] text-ws-text-tertiary truncate">· {paused ? 'paused' : statusLabel}</span>}
           </div>
           <div className="flex items-center gap-1">
@@ -223,7 +226,7 @@ export function AnnotatorPanel({
                     <button data-testid="clear-saved" onClick={picker.clearSaved} className="ann-btn">clear</button>
                   </div>
                 </div>
-                <div data-testid="saved-list" className="flex flex-col gap-1 bg-black/30 rounded-lg p-2 max-h-56 overflow-y-auto">
+                <div data-testid="saved-list" className={`flex flex-col gap-1 bg-black/30 rounded-lg p-2 overflow-y-auto ${docked ? 'max-h-[40vh]' : 'max-h-56'}`}>
                   {groupTrackers(saved).map((g) => {
                     const open = !collapsed.has(g.id); const hidden = picker.hidden.has(g.id)
                     const kindIcon = g.kind === 'circle' ? '○' : g.kind === 'line' ? '╱' : '▱'

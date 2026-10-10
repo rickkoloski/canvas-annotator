@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnnotatorPanel, createSvgSpace, useShapePicker, type CanvasShape } from './lib/canvas-annotator'
 import { ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
 import { acceptRefined, buildAnchorsDoc, editEffects, hitVertex, listEffects, moveVertex, overlayFor, refinedOverlay, runEngine, type AnchorsDoc, type EffectRow, type Manifest, type RefinedDoc, type RefinedShape } from './anchors'
@@ -19,7 +20,7 @@ export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes:
  * Save → work/<shot>/anchors.json, an engine console (sample frames, track, crops, render)
  * through the dev bridge, and a results view.
  */
-export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView, projectDoc, onProject }: {
+export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView, projectDoc, onProject, trackersSlot, onTrackers }: {
   shot: string; drawing: boolean; onShotChange: (s: string) => void; project?: string
   /** A2: bumped by the frame's Save (File › Save, ⌘S); the shot's anchors.json is written. */
   saveTick?: number
@@ -30,6 +31,9 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   projectDoc?: ProjectDoc | null
   /** A6: a Library item dropped on the canvas is copied into the bin first; the host keeps the document. */
   onProject?: (p: ProjectDoc) => void
+  /** A7: the tools rail's panel element when the Trackers group is open; the annotate panel docks into it. */
+  trackersSlot?: HTMLElement | null
+  onTrackers?: (t: { id: string; kind: string }[]) => void
 }) {
   const [manifest, setManifest] = useState<Manifest | null>(null)
   const [error, setError] = useState('')
@@ -57,6 +61,18 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   }
   const mediaUrl = (m: { id: string; file: string; linked?: boolean }) => (m.linked ? `${paths.root}/media-file/${encodeURIComponent(m.id)}` : `${paths.media}/${encodeURIComponent(m.file.split('/').pop() ?? m.file)}`)
   const onDropMedia = async (e: React.DragEvent) => {
+    const kind = e.dataTransfer.getData('application/x-effect-kind')
+    if (kind && cur) {                                                   // A7: an effect preset from the Effects group
+      e.preventDefault()
+      const quads = trackerKinds.filter((t) => t.kind === 'polygon').map((t) => t.id), points = trackerKinds.filter((t) => t.kind === 'circle').map((t) => t.id)
+      const t0 = cur.t.toFixed(2); let args: string[] | null = null
+      if (kind === 'flyout') args = quads.length ? [`tracker=${quads[0]}`, `start=${t0}`, 'dur=2.0'] : null
+      else if (kind === 'pin') args = quads.length || points.length ? [`tracker=${quads[0] ?? points[0]}`, `start=${t0}`] : null
+      else if (kind === 'bubble') args = points.length ? [`tracker=${points[0]}`, `start=${t0}`, `end=${(cur.t + 3).toFixed(2)}`, 'text=…'] : null
+      else if (kind === 'overlay') { const img = projectDoc?.media.find((m) => m.type.startsWith('image/') && !m.linked); args = img ? [`image=../media/${img.file.split('/').pop()}`, 'x=0.5', 'y=0.5', 'width=0.3', `start=${t0}`, 'tracker=none'] : null }
+      if (!args) { setSavedMsg(`${kind} needs ${kind === 'overlay' ? 'an image in the Media Bin' : kind === 'bubble' ? 'a point tracker' : kind === 'flyout' ? 'a quad tracker' : 'a tracker'} on this shot`); window.setTimeout(() => setSavedMsg(''), 4000); return }
+      await effectEdit('add', [`kind=${kind}`, ...args]); return
+    }
     let id = e.dataTransfer.getData('application/x-media-id'); const libId = e.dataTransfer.getData('application/x-library-id')
     if ((!id && !libId) || !projectDoc || !cur) return
     e.preventDefault()
@@ -140,6 +156,8 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   useEffect(() => { onView?.(view) }, [view, onView])
   const copyJson = () => { const d = fullDoc(); if (d) navigator.clipboard?.writeText(JSON.stringify(d, null, 2)) }
   const trackerIds = [...new Set(picker.saved.map((sh) => sh.id))]
+  const trackerKinds = trackerIds.map((id) => ({ id, kind: picker.saved.find((sh) => sh.id === id)?.kind ?? 'polygon' }))
+  useEffect(() => { onTrackers?.(trackerKinds) }, [picker.saved])   // eslint-disable-line react-hooks/exhaustive-deps
   // T2: the mark-beat target; a click on a tracker's name in the panel selects it. Falls back to the first tracker.
   const [pickedTarget, setPickedTarget] = useState('')
   const markTarget = trackerIds.includes(pickedTarget) ? pickedTarget : (trackerIds[0] ?? '')
@@ -194,8 +212,8 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
       {error && <div data-testid="frames-error" className="text-sm text-ws-terracotta-text mb-3">{error}</div>}
 
       {view === 'frames' && manifest && cur && (
-        <div style={drawing ? { marginRight: 360 } : undefined}>{/* the floating panel docks in this gutter; it must never cover the canvas */}
-          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.includes('application/x-media-id') || e.dataTransfer.types.includes('application/x-library-id')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
+        <div style={drawing && !trackersSlot ? { marginRight: 360 } : undefined}>{/* legacy (no rail): the floating panel docks in this gutter; with the rail (A7) it lives in the Trackers group */}
+          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.some((t) => t === 'application/x-media-id' || t === 'application/x-library-id' || t === 'application/x-effect-kind')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
             className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
             <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />
             {/* A5: static overlays previewed in place (tracked ones show in the engine's stills) */}
@@ -254,10 +272,13 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
             </div>
           )}
           <EngineConsole shot={shot} project={project} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined() }} />
-          {drawing && <AnnotatorPanel picker={picker} title={`Annotate · ${shot}`} onJumpFrame={jumpToFrame} onSelectTracker={setPickedTarget} selectedTracker={markTarget} extraActions={<>
-            <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
-            <button data-testid="save-anchors" onClick={save} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">save anchors.json</button>
-          </>} />}
+          {drawing && (() => {
+            const panel = <AnnotatorPanel picker={picker} title={trackersSlot ? 'Trackers' : `Annotate · ${shot}`} docked={!!trackersSlot} onJumpFrame={jumpToFrame} onSelectTracker={setPickedTarget} selectedTracker={markTarget} extraActions={<>
+              <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
+              <button data-testid="save-anchors" onClick={save} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">save anchors.json</button>
+            </>} />
+            return trackersSlot ? createPortal(panel, trackersSlot) : panel
+          })()}
         </div>
       )}
 
