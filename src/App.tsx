@@ -25,9 +25,9 @@ export default function App() {
   const [proj, setProj] = useState<ProjectDoc | null>(null); const [projError, setProjError] = useState('')
   const [shotDirty, setShotDirty] = useState(false); const [saveTick, setSaveTick] = useState(0); const [view, setView] = useState('frames')
   // A7: the tools rail (Camtasia's left column); which group is open is a per-browser convenience
-  const [tool, setToolState] = useState<Tool | null>(() => { try { const v = localStorage.getItem('canvas-annotator.tool'); return v === 'none' ? null : ((v as Tool) || (params.get('project') ? 'media' : 'trackers')) } catch { return 'media' } })
+  const [tool, setToolState] = useState<Tool | null>(() => { try { const v = localStorage.getItem('canvas-annotator.tool'); const t = v === 'trackers' ? 'layers' : v; return t === 'none' ? null : ((t as Tool) || (params.get('project') ? 'media' : 'layers')) } catch { return 'media' } })
   const setTool = (t: Tool | null) => { setToolState(t); try { localStorage.setItem('canvas-annotator.tool', t ?? 'none') } catch { /* no storage */ } }
-  const [trackersSlot, setTrackersSlot] = useState<HTMLElement | null>(null)
+  const [layersSlot, setLayersSlot] = useState<HTMLElement | null>(null)
   const [trackers, setTrackers] = useState<{ id: string; kind: string }[]>([])
   useEffect(() => {
     if (!project) return
@@ -69,11 +69,11 @@ export default function App() {
         <ToolsRail tool={tool} onTool={setTool} groups={[
           { id: 'media', label: 'Media', icon: '🎞', available: !!proj, why: 'open a project (File › New Project… or Open Project…)' },
           { id: 'effects', label: 'Effects', icon: '✦', available: !!shot && !anim, why: 'open a shot' },
-          { id: 'trackers', label: 'Trackers', icon: '◎', available: !!shot && !anim && drawing, why: drawing ? 'open a shot' : 'turn drawing on' },
+          { id: 'layers', label: 'Layers', icon: '≣', available: !!shot || !!anim, why: 'open a shot or an animation' },
         ]}>
           {tool === 'media' && proj && <MediaBin project={proj} onProject={setProj} />}
           {tool === 'effects' && <EffectsPanel trackers={trackers} />}
-          {tool === 'trackers' && <div ref={setTrackersSlot} data-testid="trackers-slot" className="flex flex-col min-h-0 overflow-y-auto" />}
+          {tool === 'layers' && <div ref={setLayersSlot} data-testid="layers-slot" className="flex flex-col min-h-0 overflow-y-auto" />}
         </ToolsRail>
       )}
       <div className="flex-1 min-w-0">
@@ -92,11 +92,11 @@ export default function App() {
       </header>
 
       {anim && proj ? (
-        <AnimationMode projectDoc={proj} anim={anim} onProject={setProj} />
+        <AnimationMode projectDoc={proj} anim={anim} onProject={setProj} layersSlot={tool === 'layers' ? layersSlot : null} />
       ) : mode === 'start' || (mode === 'frames' && !shot) ? (
         proj ? <ProjectHome project={proj} onNewShot={() => setFrameRequest('newshot')} onNewAnimation={() => setFrameRequest('newanim')} /> : (project ? <div className="text-sm text-ws-text-tertiary">{projError || 'opening the project…'}</div> : <Welcome onNew={() => setFrameRequest('new')} onOpen={() => setFrameRequest('open')} />)
       ) : mode === 'frames' ? (
-        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} projectDoc={proj} onProject={setProj} saveTick={saveTick} onDirty={setShotDirty} onView={setView} trackersSlot={tool === 'trackers' ? trackersSlot : null} onTrackers={setTrackers} />
+        <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} projectDoc={proj} onProject={setProj} saveTick={saveTick} onDirty={setShotDirty} onView={setView} layersSlot={tool === 'layers' ? layersSlot : null} hasRail={!!(proj || mode === 'frames' || anim)} onTrackers={setTrackers} />
       ) : (
         <>
           <div data-testid="canvas" onClick={picker.onCanvasClick} className={`rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>

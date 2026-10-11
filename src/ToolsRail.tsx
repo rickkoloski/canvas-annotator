@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
  * (no placeholder rows); a group that needs context (a project, an open shot) is dimmed until it has it. Clicking
  * the active group hides the panel, which gives the canvas the width (Camtasia: hide the tools panel).
  */
-export type Tool = 'media' | 'effects' | 'trackers'
+export type Tool = 'media' | 'effects' | 'layers'
 export type ToolGroup = { id: Tool; label: string; icon: string; available: boolean; why?: string }
 
 export function ToolsRail({ tool, onTool, groups, children }: { tool: Tool | null; onTool: (t: Tool | null) => void; groups: ToolGroup[]; children?: ReactNode }) {

@@ -6,6 +6,8 @@ import { acceptRefined, buildAnchorsDoc, editEffects, hitVertex, listEffects, mo
 import { BeatsTab, MarkerStrip } from './BeatsMode'
 import { emptyBeats, markBeat, type Beats, type Meta } from './beats'
 import { bridgePaths, type ProjectDoc } from './project'
+import { SelectionBox } from './lib/ui/SelectionBox'
+import type { Box } from './lib/ui/handles'
 import { addFromLibrary } from './media'
 import { Select } from './lib/ui/Select'
 
@@ -20,7 +22,7 @@ export function dirtyKey(shapes: CanvasShape[], beats: Beats, meta: Meta, notes:
  * Save → work/<shot>/anchors.json, an engine console (sample frames, track, crops, render)
  * through the dev bridge, and a results view.
  */
-export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView, projectDoc, onProject, trackersSlot, onTrackers }: {
+export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onDirty, onView, projectDoc, onProject, layersSlot, hasRail, onTrackers }: {
   shot: string; drawing: boolean; onShotChange: (s: string) => void; project?: string
   /** A2: bumped by the frame's Save (File › Save, ⌘S); the shot's anchors.json is written. */
   saveTick?: number
@@ -31,8 +33,10 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   projectDoc?: ProjectDoc | null
   /** A6: a Library item dropped on the canvas is copied into the bin first; the host keeps the document. */
   onProject?: (p: ProjectDoc) => void
-  /** A7: the tools rail's panel element when the Trackers group is open; the annotate panel docks into it. */
-  trackersSlot?: HTMLElement | null
+  /** A7/L1: the tools rail's Layers panel element; the guide layers (annotate panel) and the effect layers dock into it. */
+  layersSlot?: HTMLElement | null
+  /** L1: true when the tools rail is on the page (the annotate panel then lives only in the Layers group, never floats). */
+  hasRail?: boolean
   onTrackers?: (t: { id: string; kind: string }[]) => void
 }) {
   const [manifest, setManifest] = useState<Manifest | null>(null)
@@ -52,6 +56,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   const paths = bridgePaths(project); const base = paths.work(shot)
   // ── A5: effects from the shot file; a Media Bin item dropped on the canvas becomes an overlay ──
   const [effects, setEffects] = useState<EffectRow[]>([])
+  const [selected, setSelected] = useState<number | null>(null)     // L1: the selected effect layer (index in the shot file)
   const [effectsBusy, setEffectsBusy] = useState(false)
   const loadEffects = async () => { if (shot) setEffects(await listEffects(shot, project)) }
   const effectEdit = async (op: 'add' | 'set' | 'remove', args: string[]) => {
@@ -126,16 +131,17 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   }, [picker.saved, picker.current, cur, refined, showRefined])
   useShapeOverlay(space, overlay)
 
-  // keyboard: [ and ] step frames, z toggles the loupe
+  // keyboard: [ and ] step frames, z toggles the loupe, Delete removes the selected layer
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!manifest || (e.target as HTMLElement)?.tagName === 'INPUT' || e.metaKey || e.ctrlKey) return
+      if (!manifest || ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName) || e.metaKey || e.ctrlKey) return
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected !== null) { e.preventDefault(); void effectEdit('remove', [String(selected)]); setSelected(null); return }
       if (e.key === ']') setIdx((i) => Math.min(manifest.frames.length - 1, i + 1))
       if (e.key === '[') setIdx((i) => Math.max(0, i - 1))
       if (e.key === 'z') setLoupe((l) => !l)
     }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
-  }, [manifest])
+  }, [manifest, selected])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const extras = () => ({ beats, meta: { ...meta, updated: new Date().toISOString().slice(0, 10) }, notes, decisions })
   const fullDoc = () => (manifest ? { ...buildAnchorsDoc(manifest, picker.saved), ...extras() } : null)
@@ -196,6 +202,48 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   }
   const onClick = (e: React.MouseEvent) => { if (dragged.current) { dragged.current = false; return } if (e.altKey) return; picker.onCanvasClick(e) }
 
+  // ── L1: effect layers (the shot file's effects, in stacking order) and the selected layer's handles ──
+  const mediaOf = (image: unknown) => { const name = String(image ?? '').split('/').pop(); return projectDoc?.media.find((x) => x.file.split('/').pop() === name) }
+  const effectLayers = (
+    <div data-testid="effect-layers" className={`flex flex-col gap-1 ${layersSlot ? 'px-3 pb-3' : 'mt-2 rounded-lg px-3 py-2'}`} style={layersSlot ? undefined : { background: 'rgba(250,247,240,.04)' }}>
+      <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">effect layers <span className="text-ws-text-tertiary normal-case tracking-normal">· the shot file · drop a preset or a bin item on the canvas</span></span>
+      {effects.length === 0 && <span className="text-xs text-ws-text-tertiary">none yet</span>}
+      {effects.map((e) => (
+        <div key={e.i} data-testid={`effect-${e.i}`} data-selected={selected === e.i ? 'true' : 'false'} onClick={() => setSelected(selected === e.i ? null : e.i)}
+          className={`flex flex-col gap-1 rounded-lg px-2 py-1.5 border cursor-pointer ${selected === e.i ? 'border-ws-terracotta bg-[rgba(224,155,88,.12)]' : 'border-transparent hover:border-ws-border-strong'}`}>
+          <div className="flex items-center gap-2 font-ws-mono text-xs"><span className="text-ws-text-primary">{e.i} · {e.kind}</span>
+            <span className="truncate text-ws-text-secondary">{e.kind === 'overlay' ? String(e.image ?? '').split('/').pop() : e.kind === 'bubble' ? `"${String(e.text ?? '')}"` : e.kind === 'flyout' || e.kind === 'pin' ? String(e.ui ?? '').split('/').pop() : ''}</span>
+            <button data-testid={`effect-remove-${e.i}`} disabled={effectsBusy} onClick={(ev) => { ev.stopPropagation(); void effectEdit('remove', [String(e.i)]); if (selected === e.i) setSelected(null) }} className="ann-btn !px-1.5 !py-0.5 ml-auto" title="Remove from the shot file">×</button></div>
+          <div className="flex flex-wrap items-center gap-2 font-ws-mono text-[0.65rem] text-ws-text-tertiary" onClick={(ev) => ev.stopPropagation()}>
+            <label className="flex items-center gap-1">attach to
+              <Select testid={`effect-tracker-${e.i}`} value={e.tracker ?? ''} disabled={effectsBusy} onChange={(v) => void effectEdit('set', [String(e.i), `tracker=${v || 'none'}`])}
+                options={[{ value: '', label: 'none (static)' }, ...trackerIds.map((id) => ({ value: id, label: id }))]} />
+            </label>
+            <span>start {String(e.start ?? 0)}{e.end != null ? ` · end ${String(e.end)}` : e.dur != null ? ` · dur ${String(e.dur)}` : ''}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+  const sel = selected !== null ? effects.find((e) => e.i === selected) : undefined
+  const selBox = (() => {
+    if (!sel || !cur) return null
+    if (sel.kind === 'overlay' && !sel.tracker) {
+      const m = mediaOf(sel.image); const aspect = m?.width && m?.height ? m.width / m.height : 16 / 9
+      const w = Number(sel.width ?? 0.3); const h = (w * cur.width) / aspect / cur.height
+      return { box: { x: Number(sel.x ?? 0.5), y: Number(sel.y ?? 0.5), w, h }, aspect: aspect * (cur.height / cur.width), movable: true, resizable: true,
+        commit: (b: Box) => void effectEdit('set', [String(sel.i), `x=${b.x}`, `y=${b.y}`, `width=${b.w}`]) }
+    }
+    // attached to a tracker: the handle is the offset from the tracker's position on this frame (keyframes only)
+    const sh = picker.saved.find((x) => x.id === sel.tracker && x.frame === cur.frame)
+    if (!sh) return null
+    const c = sh.kind === 'circle' ? { x: sh.x, y: sh.y } : { x: sh.points.reduce((a, p) => a + p.x, 0) / sh.points.length, y: sh.points.reduce((a, p) => a + p.y, 0) / sh.points.length }
+    const key = sel.kind === 'bubble' ? 'anchor_offset' : 'offset'; const off = (sel[key] as number[] | undefined) ?? [0, 0]
+    const size = 0.06
+    return { box: { x: (c.x + off[0]) / cur.width, y: (c.y + off[1]) / cur.height, w: size, h: size * cur.width / cur.height }, aspect: 1, movable: sel.kind !== 'flyout', resizable: false,
+      commit: (b: Box) => void effectEdit('set', [String(sel.i), `${key}=[${Math.round(b.x * cur.width - c.x)},${Math.round(b.y * cur.height - c.y)}]`]) }
+  })()
+
   // ── tranche 2.2 / 2.4: accept the engine's refinement; save and re-track ──
   const hereRefined = cur ? refined.filter((r) => r.frame === cur.frame) : []
   const accept = (frame?: number) => picker.loadSaved(acceptRefined(picker.saved, refined, frame))
@@ -226,8 +274,8 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
       {error && <div data-testid="frames-error" className="text-sm text-ws-terracotta-text mb-3">{error}</div>}
 
       {view === 'frames' && manifest && cur && (
-        <div style={drawing && !trackersSlot ? { marginRight: 360 } : undefined}>{/* legacy (no rail): the floating panel docks in this gutter; with the rail (A7) it lives in the Trackers group */}
-          <div data-testid="canvas" onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.some((t) => t === 'application/x-media-id' || t === 'application/x-library-id' || t === 'application/x-effect-kind')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
+        <div style={drawing && !hasRail && !layersSlot ? { marginRight: 360 } : undefined}>{/* legacy (no rail): the floating panel docks in this gutter; with the rail (A7) it lives in the Trackers group */}
+          <div data-testid="canvas" data-canvas-root onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.some((t) => t === 'application/x-media-id' || t === 'application/x-library-id' || t === 'application/x-effect-kind')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
             className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
             <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />
             {/* A5: static overlays previewed in place (tracked ones show in the engine's stills) */}
@@ -236,6 +284,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
               return m ? <img key={e.i} data-testid={`overlay-preview-${e.i}`} src={mediaUrl(m)} alt="" className="absolute pointer-events-none" style={{ left: `${Number(e.x ?? 0.5) * 100}%`, top: `${Number(e.y ?? 0.5) * 100}%`, width: `${Number(e.width ?? 0.3) * 100}%`, transform: 'translate(-50%, -50%)' }} /> : null
             })}
             {loupe && <Loupe src={`${base}/keyframes_sample/${cur.path}`} svgRef={svgRef} shapes={overlay} />}
+            {selBox && <SelectionBox box={selBox.box} aspect={selBox.aspect} label={`${sel!.i} · ${sel!.kind}`} movable={selBox.movable} resizable={selBox.resizable} onCommit={selBox.commit} />}
           </div>
           <div data-testid="frame-strip" className="flex gap-2 mt-3 overflow-x-auto pb-2">
             {manifest.frames.map((f, i) => {
@@ -252,23 +301,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
           <MarkerStrip beats={beats} setBeats={setBeats} duration={duration} sampleTimes={manifest.frames.map((f) => f.t)} currentT={cur.t} lanes={laneNames} trackerIds={trackerIds}
             target={markTarget} setTarget={setPickedTarget}
             onMark={(lane, target) => setBeats(markBeat({ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }, cur.t, lane, target).beats)} />
-          {effects.length > 0 && (
-            <div data-testid="effects-strip" className="mt-2 flex flex-col gap-1 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
-              <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">effects <span className="text-ws-text-tertiary normal-case tracking-normal">· from the shot file · drop a Media Bin item on the canvas to add an overlay</span></span>
-              {effects.map((e) => (
-                <div key={e.i} data-testid={`effect-${e.i}`} className="flex flex-wrap items-center gap-2 font-ws-mono text-xs text-ws-text-secondary">
-                  <span className="text-ws-text-primary">{e.i} · {e.kind}</span>
-                  <span className="truncate max-w-[260px]">{e.kind === 'overlay' ? String(e.image ?? '').split('/').pop() : e.kind === 'bubble' ? `"${String(e.text ?? '')}"` : e.kind === 'flyout' || e.kind === 'pin' ? String(e.ui ?? '').split('/').pop() : ''}</span>
-                  <label className="flex items-center gap-1">attach to
-                    <Select testid={`effect-tracker-${e.i}`} value={e.tracker ?? ''} disabled={effectsBusy} onChange={(v) => void effectEdit('set', [String(e.i), `tracker=${v || 'none'}`])}
-                      options={[{ value: '', label: 'none (static)' }, ...trackerIds.map((id) => ({ value: id, label: id }))]} />
-                  </label>
-                  <span className="text-ws-text-tertiary">start {String(e.start ?? 0)}{e.end != null ? ` · end ${String(e.end)}` : e.dur != null ? ` · dur ${String(e.dur)}` : ''}</span>
-                  <button data-testid={`effect-remove-${e.i}`} disabled={effectsBusy} onClick={() => void effectEdit('remove', [String(e.i)])} className="ann-btn !px-1.5 !py-0.5 ml-auto" title="Remove from the shot file">×</button>
-                </div>
-              ))}
-            </div>
-          )}
+          {!layersSlot && effectLayers}
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
           {refined.length > 0 && (
             <div data-testid="refine-bar" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
@@ -287,12 +320,13 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
           )}
           <EngineConsole shot={shot} project={project} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined() }} />
           {drawing && (() => {
-            const panel = <AnnotatorPanel picker={picker} title={trackersSlot ? 'Trackers' : `Annotate · ${shot}`} docked={!!trackersSlot} onJumpFrame={jumpToFrame} onSelectTracker={setPickedTarget} selectedTracker={markTarget} extraActions={<>
+            const panel = <AnnotatorPanel picker={picker} title={layersSlot ? 'Guide layers · motion trackers' : `Annotate · ${shot}`} docked={!!layersSlot} onJumpFrame={jumpToFrame} onSelectTracker={setPickedTarget} selectedTracker={markTarget} extraActions={<>
               <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
               <button data-testid="save-anchors" onClick={save} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">save anchors.json</button>
             </>} />
-            return trackersSlot ? createPortal(panel, trackersSlot) : panel
+            return layersSlot ? createPortal(panel, layersSlot) : hasRail ? null : panel   // with the rail, the panel exists only inside the Layers group
           })()}
+          {layersSlot && createPortal(<div className="flex flex-col">{drawing ? null : <div className="px-3 pt-3 text-xs text-ws-text-tertiary">drawing is off: turn it on to author motion trackers</div>}{effectLayers}</div>, layersSlot)}   /* guide layers above, effect layers below (After Effects' stack reads top-down) */
         </div>
       )}
 
