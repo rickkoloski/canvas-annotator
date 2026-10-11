@@ -284,7 +284,8 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
               return m ? <img key={e.i} data-testid={`overlay-preview-${e.i}`} src={mediaUrl(m)} alt="" className="absolute pointer-events-none" style={{ left: `${Number(e.x ?? 0.5) * 100}%`, top: `${Number(e.y ?? 0.5) * 100}%`, width: `${Number(e.width ?? 0.3) * 100}%`, transform: 'translate(-50%, -50%)' }} /> : null
             })}
             {loupe && <Loupe src={`${base}/keyframes_sample/${cur.path}`} svgRef={svgRef} shapes={overlay} />}
-            {selBox && <SelectionBox box={selBox.box} aspect={selBox.aspect} label={`${sel!.i} · ${sel!.kind}`} movable={selBox.movable} resizable={selBox.resizable} onCommit={selBox.commit} />}
+            {selBox && <SelectionBox box={selBox.box} aspect={selBox.aspect} label={`${sel!.i} · ${sel!.kind}`} movable={selBox.movable} resizable={selBox.resizable} onCommit={selBox.commit}
+              onGestureEnd={() => { dragged.current = true; window.setTimeout(() => { dragged.current = false }, 0) }} />}
           </div>
           <div data-testid="frame-strip" className="flex gap-2 mt-3 overflow-x-auto pb-2">
             {manifest.frames.map((f, i) => {

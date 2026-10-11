@@ -7,8 +7,11 @@ import { moveBox, resizeBox, type Box } from './handles'
  * follows the pointer locally and `onCommit` fires once on release with the final box, so the file of truth gets
  * one write per gesture.
  */
-export function SelectionBox({ box, aspect, label, onCommit, movable = true, resizable = true, testid = 'selection-box' }: {
-  box: Box; aspect: number; label?: string; onCommit: (b: Box) => void; movable?: boolean; resizable?: boolean; testid?: string
+export function SelectionBox({ box, aspect, label, onCommit, onGestureEnd, movable = true, resizable = true, testid = 'selection-box' }: {
+  box: Box; aspect: number; label?: string; onCommit: (b: Box) => void
+  /** Fires on release, before the commit: the host swallows the click the browser sends to the canvas after a drag that ended off the handle. */
+  onGestureEnd?: () => void
+  movable?: boolean; resizable?: boolean; testid?: string
 }) {
   const [live, setLive] = useState<Box | null>(null)
   const drag = useRef<{ mode: 'move' | 'resize'; start: { x: number; y: number }; box: Box; rect: DOMRect } | null>(null)
@@ -25,7 +28,7 @@ export function SelectionBox({ box, aspect, label, onCommit, movable = true, res
     }
     const onUp = () => {
       window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp)
-      const d = drag.current; drag.current = null
+      const d = drag.current; drag.current = null; onGestureEnd?.()
       setLive((l) => { if (l && d && (l.x !== d.box.x || l.y !== d.box.y || l.w !== d.box.w)) onCommit(l); return null })
     }
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
