@@ -441,4 +441,11 @@ output:
   }
 }
 
-export default defineConfig({ plugins: [react(), vidfxBridge()], server: { port: 5181, strictPort: true } })
+const CREATIVE_ROOT = (process.env.CREATIVE_ROOT ?? path.join(os.homedir(), 'src/ops/creative')).replace(/^~/, os.homedir())
+export default defineConfig({
+  plugins: [react(), vidfxBridge()],
+  // the page plays an animation with Remotion's <Player> using the SAME Scene source the CLI renders (creative/animations/_lib);
+  // react and remotion are deduped so that file, which lives outside this package, uses this package's copies
+  resolve: { alias: { '@creative-lib': path.join(CREATIVE_ROOT, 'animations', '_lib') }, dedupe: ['react', 'react-dom', 'remotion'] },
+  server: { port: 5181, strictPort: true, fs: { allow: ['.', CREATIVE_ROOT] } },
+})

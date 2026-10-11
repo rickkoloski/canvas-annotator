@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Player, type PlayerRef } from '@remotion/player'
+import { Scene } from '@creative-lib/scene'
 import { createPortal } from 'react-dom'
 import { SelectionBox } from './lib/ui/SelectionBox'
 import type { Box } from './lib/ui/handles'
@@ -25,11 +27,11 @@ async function runRemotion(body: Record<string, unknown>, onChunk: (s: string) =
 export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { projectDoc: ProjectDoc; anim: string; onProject: (p: ProjectDoc) => void; layersSlot?: HTMLElement | null }) {
   const paths = bridgePaths(projectDoc.name); const adir = `${paths.root}/animations/${encodeURIComponent(anim)}`
   const [props, setProps] = useState<AnimProps | null>(null); const [err, setErr] = useState('')
-  const [frame, setFrame] = useState(12); const [stillKey, setStillKey] = useState(0); const [shown, setShown] = useState<number | null>(null)   // shown = the frame whose still is on screen
+  const [frame, setFrame] = useState(0)   // the Player's current frame (a dropped layer starts here)
   const [busy, setBusy] = useState(''); const [out, setOut] = useState('')
   const [draft, setDraft] = useState(''); const [studio, setStudio] = useState(''); const [over, setOver] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
-  const [selected, setSelected] = useState<{ kind: 'layer' | 'text'; i: number } | null>(null); const [rev, setRev] = useState(0)
+  const [selected, setSelected] = useState<{ kind: 'layer' | 'text'; i: number } | null>(null)
 
   const load = async () => {
     const r = await fetch(`${adir}/props.json?v=${Date.now()}`); if (!r.ok) { setErr(`cannot read props.json (${r.status})`); return }
@@ -37,20 +39,18 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
     fetch(`${paths.renders}/${anim}_draft.mp4`, { method: 'HEAD' }).then((h) => setDraft(h.ok ? `${paths.renders}/${anim}_draft.mp4?v=${Date.now()}` : ''))
   }
   useEffect(() => { void load() }, [anim])   // eslint-disable-line react-hooks/exhaustive-deps
-  const pending = useRef<number | null>(null); const busyRef = useRef(false)
-  /** Render the still for frame f; while one is rendering the latest request waits and runs next (scrubbing never loses the last frame). */
-  const still = async (f = frame) => {
-    if (busyRef.current) { pending.current = f; return }
-    busyRef.current = true; setBusy('still'); setOut('')
-    const code = await runRemotion({ project: projectDoc.name, anim, op: 'still', frame: f }, (s) => setOut((o) => o + s))
-    busyRef.current = false; setBusy(''); if (code === 0) { setShown(f); setStillKey((k) => k + 1) }
-    const next = pending.current; pending.current = null
-    if (next !== null && next !== f) void still(next)
-  }
-  useEffect(() => { if (props) void still(frame) }, [props?.layers.length, props?.texts.length, frame, rev])   // eslint-disable-line react-hooks/exhaustive-deps
+  const playerRef = useRef<PlayerRef>(null)
+  useEffect(() => {
+    const p = playerRef.current; if (!p) return
+    const onFrame = (e: { detail: { frame: number } }) => setFrame(e.detail.frame)
+    p.addEventListener('frameupdate', onFrame); return () => p.removeEventListener('frameupdate', onFrame)
+  }, [props?.id])
+  // the project home's card shows work/<anim>/still_12.png: refresh it quietly after edits settle
+  const thumbTimer = useRef<number | null>(null)
+  const thumb = () => { if (thumbTimer.current) window.clearTimeout(thumbTimer.current); thumbTimer.current = window.setTimeout(() => { void runRemotion({ project: projectDoc.name, anim, op: 'still', frame: 12 }, () => {}) }, 1500) }
   const save = async (next: AnimProps) => {
     const r = await fetch(`${adir}/props.json`, { method: 'PUT', body: JSON.stringify(next, null, 2) })
-    if (!r.ok) { setErr(`save failed ${r.status}`); return } setProps(next); setRev((v) => v + 1)
+    if (!r.ok) { setErr(`save failed ${r.status}`); return } setProps(next); thumb()
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -86,7 +86,8 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
   const upd = (i: number, patch: Partial<Layer>) => props && save({ ...props, layers: props.layers.map((l, k) => (k === i ? { ...l, ...patch } : l)) })
   const inp = 'font-ws-mono text-xs bg-transparent text-ws-text-primary border border-ws-border-subtle rounded px-1 py-0.5 outline-none focus:border-ws-terracotta'
 
-  if (!props) return <div data-testid="anim-error" className="text-sm text-ws-terracotta-text">{err || 'loading…'}</div>
+  const playerProps = useMemo(() => (props ? { ...props, mediaBase: paths.media } : null), [props, paths.media])   // before any early return: hooks keep their order
+  if (!props || !playerProps) return <div data-testid="anim-error" className="text-sm text-ws-terracotta-text">{err || 'loading…'}</div>
   const frames = Math.round(props.duration * props.fps)
   const isSel = (kind: 'layer' | 'text', i: number) => selected?.kind === kind && selected.i === i
   const layersList = (
@@ -136,8 +137,7 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
         <span className="text-ws-text-primary text-sm">animation <span className="text-ws-terracotta-text">{anim}</span></span>
         <span>{props.width}×{props.height} · {props.fps} fps · {props.duration} s · composition {props.id}</span>
         <span className="ml-auto flex items-center gap-2">
-          frame <input data-testid="anim-frame" type="range" min={0} max={frames - 1} value={frame} onChange={(e) => setFrame(Number(e.target.value))} className="w-40" /> <span data-testid="anim-frame-n">{frame}</span>
-          <button data-testid="anim-still" disabled={!!busy} onClick={() => void still()} className="ann-btn disabled:opacity-40 w-32 text-center">{busy === 'still' ? 'rendering…' : 'refresh preview'}</button>
+          <span data-testid="anim-frame-n" title="the Player's frame">frame {frame}</span>
           <button data-testid="anim-render" disabled={!!busy} onClick={() => void render()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40 w-28 text-center">{busy === 'render' ? 'rendering…' : 'render draft'}</button>
           {studio ? <button data-testid="anim-studio-stop" onClick={() => void stopStudio()} className="ann-btn">stop Studio</button> : <button data-testid="anim-studio" disabled={!!busy} onClick={() => void openStudio()} className="ann-btn disabled:opacity-40 w-32 text-center">{busy === 'studio' ? 'starting…' : 'open in Studio'}</button>}
         </span>
@@ -145,10 +145,11 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
       {err && <div data-testid="anim-error" className="text-xs text-ws-terracotta-text mb-2">{err}</div>}
       <div ref={canvasRef} data-testid="anim-canvas" data-canvas-root onDragOver={(e) => { if (e.dataTransfer.types.some((t) => t === 'application/x-media-id' || t === 'application/x-library-id')) { e.preventDefault(); setOver(true) } }} onDragLeave={() => setOver(false)} onDrop={(e) => void onDrop(e)}
         className={`relative rounded-xl overflow-hidden border ${over ? 'border-ws-terracotta' : 'border-ws-border-subtle'} bg-black`} style={{ aspectRatio: `${props.width} / ${props.height}` }}>
-        {shown !== null && <img data-testid="anim-still-img" src={`${paths.work(anim)}/still_${shown}.png?v=${stillKey}`} alt="" className="block w-full h-full object-contain" style={{ opacity: busy === 'still' ? 0.5 : 1 }} />}
-        {shown === null && <div className="absolute inset-0 flex items-center justify-center font-ws-mono text-xs text-ws-text-tertiary">{busy === 'still' ? 'rendering the preview…' : 'no preview yet'}</div>}
+        <div data-testid="anim-player" className="absolute inset-0">
+          <Player ref={playerRef} component={Scene} inputProps={playerProps} durationInFrames={frames} fps={props.fps} compositionWidth={props.width} compositionHeight={props.height} controls loop acknowledgeRemotionLicense style={{ width: '100%', height: '100%' }} />   /* licence: workflows doc §0, Rick checks the company-size threshold before the first commercial render */
+        </div>
         {selBox && <SelectionBox box={selBox.box} aspect={selBox.aspect} label={selBox.label} resizable={selBox.resizable} onCommit={selBox.commit} />}
-        <div className="absolute bottom-1 right-2 font-ws-mono text-[0.6rem] text-ws-text-tertiary bg-black/50 px-1 rounded">preview = `remotion still` at frame {shown ?? frame} · drop a Media Bin item to add a layer</div>
+        <div className="absolute top-1 right-2 font-ws-mono text-[0.6rem] text-ws-text-tertiary bg-black/50 px-1 rounded pointer-events-none">Remotion Player · the same Scene the render uses · drop a Media Bin item to add a layer</div>
       </div>
       {!layersSlot && layersList}
       {out && <pre data-testid="anim-out" className="mt-2 text-[0.66rem] font-ws-mono text-ws-text-secondary bg-black/30 rounded-lg p-3 max-h-32 overflow-auto whitespace-pre-wrap">{out}</pre>}
