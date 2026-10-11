@@ -8,6 +8,7 @@ import { DemoVectorCanvas, ImageCanvas, useShapeOverlay } from './AnnotatedCanva
 import { FramesMode } from './FramesMode'
 import { AnimationMode } from './AnimationMode'
 import { APP_NAME, ProjectHome, Welcome } from './StartPage'
+import { BrandMark } from './Brand'
 import type { AppFrameDialog } from './AppFrame'
 
 type Mode = 'start' | 'vector' | 'image' | 'frames'
@@ -77,7 +78,7 @@ export default function App() {
       )}
       <div className="flex-1 min-w-0">
       <header className="flex flex-wrap items-center gap-3 mb-4">
-        <a href="/" data-testid="brand" className="flex items-center gap-2"><img src="/brand/pm-mark.svg" alt="" className="w-7 h-7" /><h1 className="font-ws-body font-semibold text-ws-text-primary text-base">{APP_NAME}</h1></a>
+        <a href="/" data-testid="brand" className="flex items-center gap-2"><BrandMark className="w-7 h-7" /><h1 className="font-ws-body font-semibold text-ws-text-primary text-base">{APP_NAME}</h1></a>
         <div className="ml-auto flex items-center gap-2">
           {chip('start', 'start')}
           {chip('vector', 'vector demo')}

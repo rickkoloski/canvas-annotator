@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { BrandMark } from './Brand'
 import { bridgePaths, listProjects, pageUrl, readRecent, type ProjectDoc, type ProjectSummary } from './project'
 
 /**
@@ -16,7 +17,7 @@ export function Welcome({ onNew, onOpen }: { onNew: () => void; onOpen: () => vo
   return (
     <div data-testid="start-welcome" className="max-w-[920px] mx-auto pt-10">
       <div className="flex items-center gap-5 mb-8">
-        <img src="/brand/pm-mark.svg" alt="" className="w-20 h-20" />
+        <BrandMark className="w-20 h-20" />
         <div>
           <h2 className="font-ws-body text-3xl font-semibold text-ws-text-primary">{APP_NAME}</h2>
           <p className="text-ws-text-secondary mt-1">Projects, media, tracked effects and animations for PortableMind's videos.</p>
@@ -60,7 +61,7 @@ export function ProjectHome({ project, onNewShot, onNewAnimation }: { project: P
   return (
     <div data-testid="start-home" className="pt-2">
       <div className="flex items-center gap-4 mb-6">
-        <img src="/brand/pm-mark.svg" alt="" className="w-12 h-12" />
+        <BrandMark className="w-12 h-12" />
         <div><h2 className="font-ws-body text-2xl font-semibold text-ws-text-primary">{project.name}</h2>
           <p className="font-ws-mono text-xs text-ws-text-tertiary">{project.canvas.width}×{project.canvas.height} · {project.canvas.fps} fps · {project.media.length} media · the Media Bin is in the rail on the left</p></div>
       </div>
