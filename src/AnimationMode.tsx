@@ -37,10 +37,15 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
     fetch(`${paths.renders}/${anim}_draft.mp4`, { method: 'HEAD' }).then((h) => setDraft(h.ok ? `${paths.renders}/${anim}_draft.mp4?v=${Date.now()}` : ''))
   }
   useEffect(() => { void load() }, [anim])   // eslint-disable-line react-hooks/exhaustive-deps
+  const pending = useRef<number | null>(null); const busyRef = useRef(false)
+  /** Render the still for frame f; while one is rendering the latest request waits and runs next (scrubbing never loses the last frame). */
   const still = async (f = frame) => {
-    if (busy) return; setBusy('still'); setOut('')
+    if (busyRef.current) { pending.current = f; return }
+    busyRef.current = true; setBusy('still'); setOut('')
     const code = await runRemotion({ project: projectDoc.name, anim, op: 'still', frame: f }, (s) => setOut((o) => o + s))
-    setBusy(''); if (code === 0) { setShown(f); setStillKey((k) => k + 1) }
+    busyRef.current = false; setBusy(''); if (code === 0) { setShown(f); setStillKey((k) => k + 1) }
+    const next = pending.current; pending.current = null
+    if (next !== null && next !== f) void still(next)
   }
   useEffect(() => { if (props) void still(frame) }, [props?.layers.length, props?.texts.length, frame, rev])   // eslint-disable-line react-hooks/exhaustive-deps
   const save = async (next: AnimProps) => {
@@ -132,9 +137,9 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
         <span>{props.width}×{props.height} · {props.fps} fps · {props.duration} s · composition {props.id}</span>
         <span className="ml-auto flex items-center gap-2">
           frame <input data-testid="anim-frame" type="range" min={0} max={frames - 1} value={frame} onChange={(e) => setFrame(Number(e.target.value))} className="w-40" /> <span data-testid="anim-frame-n">{frame}</span>
-          <button data-testid="anim-still" disabled={!!busy} onClick={() => void still()} className="ann-btn disabled:opacity-40">{busy === 'still' ? 'rendering…' : 'refresh preview'}</button>
-          <button data-testid="anim-render" disabled={!!busy} onClick={() => void render()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{busy === 'render' ? 'rendering…' : 'render draft'}</button>
-          {studio ? <button data-testid="anim-studio-stop" onClick={() => void stopStudio()} className="ann-btn">stop Studio</button> : <button data-testid="anim-studio" disabled={!!busy} onClick={() => void openStudio()} className="ann-btn disabled:opacity-40">{busy === 'studio' ? 'starting…' : 'open in Studio'}</button>}
+          <button data-testid="anim-still" disabled={!!busy} onClick={() => void still()} className="ann-btn disabled:opacity-40 w-32 text-center">{busy === 'still' ? 'rendering…' : 'refresh preview'}</button>
+          <button data-testid="anim-render" disabled={!!busy} onClick={() => void render()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40 w-28 text-center">{busy === 'render' ? 'rendering…' : 'render draft'}</button>
+          {studio ? <button data-testid="anim-studio-stop" onClick={() => void stopStudio()} className="ann-btn">stop Studio</button> : <button data-testid="anim-studio" disabled={!!busy} onClick={() => void openStudio()} className="ann-btn disabled:opacity-40 w-32 text-center">{busy === 'studio' ? 'starting…' : 'open in Studio'}</button>}
         </span>
       </div>
       {err && <div data-testid="anim-error" className="text-xs text-ws-terracotta-text mb-2">{err}</div>}
