@@ -7,13 +7,16 @@ import { AnnotatorPanel, createSvgSpace, useShapePicker } from './lib/canvas-ann
 import { DemoVectorCanvas, ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
 import { FramesMode } from './FramesMode'
 import { AnimationMode } from './AnimationMode'
+import { APP_NAME, ProjectHome, Welcome } from './StartPage'
+import type { AppFrameDialog } from './AppFrame'
 
-type Mode = 'vector' | 'image' | 'frames'
+type Mode = 'start' | 'vector' | 'image' | 'frames'
 
 const params = new URLSearchParams(window.location.search)
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') || params.get('anim') ? 'frames' : 'vector'))
+  const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') || params.get('anim') ? 'frames' : 'start'))
+  const [frameRequest, setFrameRequest] = useState<AppFrameDialog | null>(null)
   const [shot, setShot] = useState(params.get('shot') ?? '')
   const anim = params.get('anim') ?? undefined          // app frame A5b: an animation in the project
   const project = params.get('project') ?? undefined   // app frame A1: shots live in projects/<name>/; absent = legacy video-fx mounts
@@ -59,7 +62,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen p-6 mx-auto ${proj || mode === 'frames' || anim ? 'max-w-[1760px]' : 'max-w-[1400px]'}`}>
-      <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} />
+      <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} request={frameRequest} onRequestHandled={() => setFrameRequest(null)} />
       <div className="flex gap-4 items-start">
       {(proj || mode === 'frames' || anim) && (
         <ToolsRail tool={tool} onTool={setTool} groups={[
@@ -74,9 +77,9 @@ export default function App() {
       )}
       <div className="flex-1 min-w-0">
       <header className="flex flex-wrap items-center gap-3 mb-4">
-        <h1 className="font-ws-mono text-ws-terracotta-text text-lg">canvas-annotator</h1>
-        <span className="text-ws-text-tertiary text-sm">click a canvas to drop named anchors in its own units; copy them out</span>
+        <a href="/" data-testid="brand" className="flex items-center gap-2"><img src="/brand/pm-mark.svg" alt="" className="w-7 h-7" /><h1 className="font-ws-body font-semibold text-ws-text-primary text-base">{APP_NAME}</h1></a>
         <div className="ml-auto flex items-center gap-2">
+          {chip('start', 'start')}
           {chip('vector', 'vector demo')}
           {chip('image', 'image')}
           {chip('frames', 'video frames')}
@@ -89,6 +92,8 @@ export default function App() {
 
       {anim && proj ? (
         <AnimationMode projectDoc={proj} anim={anim} onProject={setProj} />
+      ) : mode === 'start' || (mode === 'frames' && !shot) ? (
+        proj ? <ProjectHome project={proj} onNewShot={() => setFrameRequest('newshot')} onNewAnimation={() => setFrameRequest('newanim')} /> : (project ? <div className="text-sm text-ws-text-tertiary">{projError || 'opening the project…'}</div> : <Welcome onNew={() => setFrameRequest('new')} onOpen={() => setFrameRequest('open')} />)
       ) : mode === 'frames' ? (
         <FramesMode shot={shot} drawing={drawing} onShotChange={setShot} project={project} projectDoc={proj} onProject={setProj} saveTick={saveTick} onDirty={setShotDirty} onView={setView} trackersSlot={tool === 'trackers' ? trackersSlot : null} onTrackers={setTrackers} />
       ) : (

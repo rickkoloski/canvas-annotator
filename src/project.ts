@@ -129,3 +129,10 @@ export async function importZip(file: File): Promise<ProjectDoc> {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
   return validateProject(await r.json())
 }
+
+/** New Shot… (start page): a shot file from a video in the bin, with the engine's defaults. */
+export async function createShot(project: string, name: string, media: string): Promise<ProjectDoc> {
+  const r = await fetch(`${bridgePaths(project).root}/shots`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, media }) })
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+  return validateProject(await r.json())
+}

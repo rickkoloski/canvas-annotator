@@ -215,6 +215,36 @@ function vidfxBridge(): Plugin {
           } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
         }
 
+        // ── New Shot (start page, 2026-10-11): a shot file from a clip in the bin, with the tracking defaults ──
+        const sm2 = /^\/projects\/([A-Za-z0-9][\w.-]{0,63})\/shots$/.exec(url)
+        if (sm2 && req.method === 'POST') {
+          const project = sm2[1]; const doc = readProject(project); if (!doc) { res.statusCode = 404; return res.end('unknown project') }
+          let body: { name?: string; media?: string }; try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+          const name = body.name ?? ''; if (!SAFE_NAME.test(name)) { res.statusCode = 400; return res.end('bad shot name') }
+          const m = (doc.media ?? []).find((x: { id: string }) => x.id === body.media); if (!m || !String(m.type).startsWith('video/')) { res.statusCode = 400; return res.end('pick a video from the Media Bin') }
+          const file = path.join(PROJECTS, project, 'shots', `${name}.yaml`); if (fs.existsSync(file)) { res.statusCode = 409; return res.end('shot exists') }
+          const source = m.linked ? m.file : `../${m.file}`; const fps = m.fps ? Math.round(m.fps * 1000) / 1000 : doc.canvas?.fps ?? 25
+          const yaml = `# ${name}: a shot in project ${project} (New Shot…, ${new Date().toISOString().slice(0, 10)}). Author motion trackers in the page, then vidfx track / render.
+name: ${name}
+source: ${source}
+fps: ${fps}
+motion_tracking:
+  engine: keyframes
+  res: 1080
+  anchors: ../work/${name}/anchors.json      # written by the page's Save
+  refine: corner
+  refine_window: 24
+  refine_max_move: 12
+  interp: cubic
+effects: []                                 # drop an Effects preset or a Media Bin item on the canvas
+output:
+  res: 2160
+`
+          fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, yaml)
+          doc.shots = [...(doc.shots ?? []), name]; doc.modified = new Date().toISOString(); writeProject(project, doc)
+          res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
+        }
+
         // ── Animations (A5b) ──
         const am = /^\/projects\/([A-Za-z0-9][\w.-]{0,63})\/animations$/.exec(url)
         if (am && req.method === 'POST') {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createAnimation, createProject, exportZipUrl, importZip, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
+import { createAnimation, createProject, createShot, exportZipUrl, importZip, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
 import { Select } from './lib/ui/Select'
 
 /**
@@ -7,11 +7,15 @@ import { Select } from './lib/ui/Select'
  * New Project…, Open Project…, Open Recent, Save (⌘S), Save As…, Close Project. Explicit saves with an
  * unsaved dot (Rick, decision 5). Dialogs are in-page; nothing uses window.alert/confirm/prompt.
  */
-export function AppFrame({ project, dirty, onSave, shot, view, error, anim }: {
+export type AppFrameDialog = 'new' | 'open' | 'newshot' | 'newanim'
+export function AppFrame({ project, dirty, onSave, shot, view, error, anim, request, onRequestHandled }: {
   project: ProjectDoc | null; dirty: boolean; onSave: () => Promise<boolean>; shot: string; view: string; error?: string; anim?: string
+  /** The start page asks the frame to open one of its dialogs. */
+  request?: AppFrameDialog | null; onRequestHandled?: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [dialog, setDialog] = useState<null | 'new' | 'open' | 'saveas' | 'newanim' | { unsaved: () => void }>(null)
+  const [dialog, setDialog] = useState<null | 'new' | 'open' | 'saveas' | 'newshot' | 'newanim' | { unsaved: () => void }>(null)
+  useEffect(() => { if (request) { setDialog(request); onRequestHandled?.() } }, [request])   // eslint-disable-line react-hooks/exhaustive-deps
   const [msg, setMsg] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const zipRef = useRef<HTMLInputElement>(null)
@@ -53,6 +57,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim }: {
             {item('file-save', 'Save', () => { setOpen(false); void save() }, '⌘S')}
             {item('file-saveas', 'Save As…', () => { setOpen(false); setDialog('saveas') }, undefined, !project)}
             <div className="my-1 border-t border-ws-border-subtle" />
+            {item('file-newshot', 'New Shot…', () => { setOpen(false); setDialog('newshot') }, 'vidfx', !project)}
             {item('file-newanim', 'New Animation…', () => { setOpen(false); setDialog('newanim') }, 'Remotion', !project)}
             <div className="my-1 border-t border-ws-border-subtle" />
             {item('file-export-zip', 'Export Zipped Project…', () => { setOpen(false); if (project) window.location.assign(exportZipUrl(project.name)) }, '.zip', !project)}
@@ -87,6 +92,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim }: {
 
       {dialog === 'new' && <NewProjectDialog onClose={() => setDialog(null)} onCreate={async (name, canvas) => { const p = await createProject(name, canvas); rememberRecent(p.name); go(pageUrl(p.name)) }} />}
       {dialog === 'open' && <OpenProjectDialog onClose={() => setDialog(null)} onOpen={(n) => { rememberRecent(n); go(pageUrl(n)) }} />}
+      {dialog === 'newshot' && project && <NewShotDialog project={project} onClose={() => setDialog(null)} onCreate={async (name, media) => { await createShot(project.name, name, media); go(pageUrl(project.name, name)) }} />}
       {dialog === 'newanim' && project && <NewAnimationDialog onClose={() => setDialog(null)} onCreate={async (name) => { await createAnimation(project.name, name); go(pageUrl(project.name, undefined, undefined, name)) }} />}
       {dialog === 'saveas' && project && <SaveAsDialog from={project.name} onClose={() => setDialog(null)} onSaved={(n) => { rememberRecent(n); go(pageUrl(n, shot, view)) }} />}
       {dialog && typeof dialog === 'object' && (
@@ -185,6 +191,25 @@ function NewAnimationDialog({ onClose, onCreate }: { onClose: () => void; onCrea
       {err && <div className="text-xs text-ws-terracotta-text mb-2">{err}</div>}
       <div className="flex gap-2 justify-end"><button className="ann-btn" onClick={onClose}>Cancel</button>
         <button data-testid="newanim-create" disabled={!ok || busy} onClick={() => void submit()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{busy ? 'creating…' : 'Create'}</button></div>
+    </Modal>
+  )
+}
+
+function NewShotDialog({ project, onClose, onCreate }: { project: ProjectDoc; onClose: () => void; onCreate: (name: string, media: string) => Promise<void> }) {
+  const videos = project.media.filter((m) => m.type.startsWith('video/'))
+  const [name, setName] = useState(''); const [media, setMedia] = useState(videos[0]?.id ?? ''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false)
+  const ok = SAFE_NAME.test(name) && !!media
+  const submit = async () => { if (!ok || busy) return; setBusy(true); try { await onCreate(name, media) } catch (e) { setErr(String((e as Error).message ?? e)); setBusy(false) } }
+  return (
+    <Modal title="New Shot" testid="dialog-newshot" onClose={onClose}>
+      <p className="text-xs text-ws-text-secondary mb-2">A shot is a clip from the Media Bin with motion trackers and effects on it. The shot file goes to <span className="font-ws-mono">shots/&lt;name&gt;.yaml</span> with the tracking defaults; then sample frames and author trackers in the page.</p>
+      {videos.length === 0 && <div className="text-xs text-ws-terracotta-text mb-2">no video in the Media Bin yet: Import Media first</div>}
+      <label className="flex flex-col gap-1 text-xs text-ws-text-secondary mb-2">Shot name
+        <input data-testid="newshot-name" autoFocus value={name} onChange={(e) => setName(e.target.value.trim())} onKeyDown={(e) => { if (e.key === 'Enter') void submit() }} placeholder="desk-scene" className={inp} /></label>
+      <div className="flex items-center gap-2 text-xs text-ws-text-secondary mb-3">clip <Select testid="newshot-media" value={media} onChange={setMedia} options={videos.map((m) => ({ value: m.id, label: `${m.id}${m.linked ? ' ⛓' : ''}` }))} placeholder="(choose)" /></div>
+      {err && <div className="text-xs text-ws-terracotta-text mb-2">{err}</div>}
+      <div className="flex gap-2 justify-end"><button className="ann-btn" onClick={onClose}>Cancel</button>
+        <button data-testid="newshot-create" disabled={!ok || busy} onClick={() => void submit()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{busy ? 'creating…' : 'Create'}</button></div>
     </Modal>
   )
 }
