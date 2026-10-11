@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { spawn, spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 
 /**
  * Dev-only bridge to video-fx (PLAN.md Phase 2, tranche 1.1 + 1.5). Local machine only;
@@ -28,6 +29,9 @@ import { spawn, spawnSync } from 'node:child_process'
  *   Library (A6, Camtasia's cross-project store): LIBRARY_ROOT=~/src/ops/creative/library (library.json + <folder>/<file>).
  *   GET /library; POST /library/add {project, id, folder} copies a bin item in; DELETE /library/<id>; GET /library/thumb/<id>;
  *   POST /projects/<name>/media/from-library {id} copies a library item into the project's bin.
+ *   Zipped projects (A8, Camtasia's File › Export › Zipped Project / Import › Zipped Project): GET /projects/<name>/export.zip
+ *   streams a standalone package (project.json, media/ with linked files copied in, shots/, animations/; no work/ or
+ *   renders/); POST /projects/import-zip (raw body, x-filename) expands one into projects/<its name>/ (suffixed if taken).
  *   Animations (A5b, Remotion brownfield: entry file per animation, toolchain at CREATIVE_ROOT=~/src/ops/creative):
  *   POST /projects/<name>/animations {name} copies animations/_template; PUT …/animations/<anim>/props.json writable;
  *   POST /remotion/run {project, anim, op: render|still, frame?} streams the CLI (render → renders/<anim>_draft.mp4,
@@ -171,6 +175,44 @@ function vidfxBridge(): Plugin {
           const doc = { ...src, name: to, created: new Date().toISOString(), modified: new Date().toISOString() }
           fs.writeFileSync(path.join(dst, 'project.json'), JSON.stringify(doc, null, 2))
           res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
+        }
+
+        // ── Zipped projects (A8) ──
+        const ex = /^\/projects\/([A-Za-z0-9][\w.-]{0,63})\/export\.zip$/.exec(url)
+        if (ex && req.method === 'GET') {
+          const name = ex[1]; const doc = readProject(name); if (!doc) { res.statusCode = 404; return res.end('unknown project') }
+          const tmp = fs.mkdtempSync(path.join(tmpdir(), 'creative-zip-')); const pkg = path.join(tmp, name)
+          try {
+            for (const d of ['media', 'shots', 'animations']) { const sd = path.join(PROJECTS, name, d); fs.mkdirSync(path.join(pkg, d), { recursive: true }); if (fs.existsSync(sd)) fs.cpSync(sd, path.join(pkg, d), { recursive: true, filter: (p) => !p.includes('/.thumbs') }) }
+            const media = (doc.media ?? []).map((m: { id: string; file: string; linked?: boolean; source?: string }) => {
+              if (!m.linked) return m
+              const src = m.file; const base = path.basename(src); const target = path.join(pkg, 'media', uniqueName(path.join(pkg, 'media'), base))
+              if (fs.existsSync(src)) fs.copyFileSync(src, target)                                   // standalone: a linked master is copied into the package
+              const { linked: _l, ...rest } = m; return { ...rest, file: `media/${path.basename(target)}`, source: src }
+            })
+            fs.writeFileSync(path.join(pkg, 'project.json'), JSON.stringify({ ...doc, media, exported: new Date().toISOString() }, null, 2))
+            const zipPath = path.join(tmp, `${name}.zip`)
+            const r = spawnSync('zip', ['-r', '-q', '-1', zipPath, name], { cwd: tmp })
+            if (r.status !== 0) { res.statusCode = 500; return res.end(`zip failed: ${r.stderr}`) }
+            res.setHeader('content-type', 'application/zip'); res.setHeader('content-disposition', `attachment; filename="${name}.zip"`); res.setHeader('content-length', String(fs.statSync(zipPath).size))
+            const stream = fs.createReadStream(zipPath); stream.on('close', () => fs.rmSync(tmp, { recursive: true, force: true })); return stream.pipe(res)
+          } catch (e) { fs.rmSync(tmp, { recursive: true, force: true }); res.statusCode = 500; return res.end(String((e as Error).message)) }
+        }
+        if (url === '/projects/import-zip' && req.method === 'POST') {
+          const tmp = fs.mkdtempSync(path.join(tmpdir(), 'creative-unzip-'))
+          try {
+            const zipPath = path.join(tmp, 'in.zip'); fs.writeFileSync(zipPath, await readRaw(req))
+            const r = spawnSync('unzip', ['-q', zipPath, '-d', path.join(tmp, 'x')]); if (r.status !== 0) { res.statusCode = 400; return res.end('not a zip I can open') }
+            const root = path.join(tmp, 'x'); const entries = fs.readdirSync(root).filter((n) => !n.startsWith('.') && n !== '__MACOSX')
+            const pkg = fs.existsSync(path.join(root, 'project.json')) ? root : (entries.length === 1 && fs.existsSync(path.join(root, entries[0], 'project.json')) ? path.join(root, entries[0]) : null)
+            if (!pkg) { res.statusCode = 400; return res.end('the zip holds no project.json (expected <name>/project.json, as Export Zipped Project writes it)') }
+            const doc = JSON.parse(fs.readFileSync(path.join(pkg, 'project.json'), 'utf8')); if (doc.version !== 1 || !SAFE_NAME.test(String(doc.name))) { res.statusCode = 400; return res.end('bad project.json') }
+            let name = String(doc.name), i = 2; while (fs.existsSync(path.join(PROJECTS, name))) name = `${doc.name}-${i++}`   // Camtasia asks for a location; we suffix
+            const dst = path.join(PROJECTS, name); fs.cpSync(pkg, dst, { recursive: true })
+            for (const d of ['media', 'shots', 'animations', 'work', 'renders']) fs.mkdirSync(path.join(dst, d), { recursive: true })
+            const out = { ...doc, name, imported: new Date().toISOString(), modified: new Date().toISOString() }; writeProject(name, out)
+            res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(out))
+          } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
         }
 
         // ── Animations (A5b) ──

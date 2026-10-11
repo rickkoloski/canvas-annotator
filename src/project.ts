@@ -121,3 +121,11 @@ export async function createAnimation(project: string, name: string): Promise<Pr
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
   return validateProject(await r.json())
 }
+
+/** A8: Camtasia's Export Zipped Project (a download of the standalone package) and Import Zipped Project. */
+export function exportZipUrl(name: string): string { return `${bridgePaths(name).root}/export.zip` }
+export async function importZip(file: File): Promise<ProjectDoc> {
+  const r = await fetch('/projects/import-zip', { method: 'POST', headers: { 'content-type': 'application/zip', 'x-filename': encodeURIComponent(file.name) }, body: file })
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+  return validateProject(await r.json())
+}

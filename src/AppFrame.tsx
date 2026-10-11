@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createAnimation, createProject, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
+import { createAnimation, createProject, exportZipUrl, importZip, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
 import { Select } from './lib/ui/Select'
 
 /**
@@ -14,6 +14,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim }: {
   const [dialog, setDialog] = useState<null | 'new' | 'open' | 'saveas' | 'newanim' | { unsaved: () => void }>(null)
   const [msg, setMsg] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+  const zipRef = useRef<HTMLInputElement>(null)
   const recent = readRecent()
 
   useEffect(() => {
@@ -54,10 +55,15 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim }: {
             <div className="my-1 border-t border-ws-border-subtle" />
             {item('file-newanim', 'New Animation…', () => { setOpen(false); setDialog('newanim') }, 'Remotion', !project)}
             <div className="my-1 border-t border-ws-border-subtle" />
+            {item('file-export-zip', 'Export Zipped Project…', () => { setOpen(false); if (project) window.location.assign(exportZipUrl(project.name)) }, '.zip', !project)}
+            {item('file-import-zip', 'Import Zipped Project…', () => { setOpen(false); zipRef.current?.click() })}
+            <div className="my-1 border-t border-ws-border-subtle" />
             {item('file-close', 'Close Project', () => guarded(() => go(pageUrl(null))), undefined, !project)}
           </div>
         )}
       </div>
+      <input ref={zipRef} data-testid="import-zip-input" type="file" accept=".zip,application/zip" className="hidden"
+        onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; try { setMsg('importing…'); const p = await importZip(f); rememberRecent(p.name); go(pageUrl(p.name)) } catch (err) { setMsg(`import failed: ${String((err as Error).message ?? err)}`) } }} />
       <span data-testid="project-name" className="font-ws-mono text-sm text-ws-text-primary flex items-center gap-1.5">
         <span className="text-ws-text-tertiary text-xs">project</span>
         {project ? project.name : <span className="text-ws-text-tertiary">none · legacy shots</span>}
