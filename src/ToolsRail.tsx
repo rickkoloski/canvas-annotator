@@ -13,14 +13,14 @@ export function ToolsRail({ tool, onTool, groups, children, onHome }: { tool: To
   return (
     <div className="flex items-start gap-0 self-start sticky top-4">
       <nav data-testid="tools-rail" className="glass rounded-2xl p-1.5 flex flex-col gap-1 w-16">
-        {onHome && <button data-testid="rail-home" onClick={onHome} title="Project home (shots, animations, media)" className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 border border-transparent text-ws-text-secondary hover:bg-[rgba(250,247,240,.06)] hover:text-ws-text-primary"><span className="text-lg leading-none">⌂</span><span className="font-ws-mono text-[0.55rem] tracking-[0.12em] uppercase">Home</span></button>}
+        {onHome && <button data-testid="rail-home" onClick={onHome} title="Project home (shots, animations, media)" className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 border border-transparent text-ws-text-secondary hover:bg-[rgb(var(--ws-ink) / .06)] hover:text-ws-text-primary"><span className="text-lg leading-none">⌂</span><span className="font-ws-mono text-[0.55rem] tracking-[0.12em] uppercase">Home</span></button>}
         {onHome && <div className="my-0.5 border-t border-ws-border-subtle" />}
         {groups.map((g) => {
           const active = tool === g.id
           return (
             <button key={g.id} data-testid={`rail-${g.id}`} data-active={active ? 'true' : 'false'} disabled={!g.available} title={g.available ? (active ? `Hide ${g.label}` : g.label) : g.why}
               onClick={() => onTool(active ? null : g.id)}
-              className={`flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 border transition-colors ${active ? 'border-ws-terracotta bg-[rgba(224,155,88,.14)] text-ws-text-primary' : 'border-transparent text-ws-text-secondary hover:bg-[rgba(250,247,240,.06)]'} disabled:opacity-30 disabled:hover:bg-transparent`}>
+              className={`flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 border transition-colors ${active ? 'border-ws-terracotta bg-[rgba(224,155,88,.14)] text-ws-text-primary' : 'border-transparent text-ws-text-secondary hover:bg-[rgb(var(--ws-ink) / .06)]'} disabled:opacity-30 disabled:hover:bg-transparent`}>
               <span className="text-lg leading-none">{g.icon}</span>
               <span className="font-ws-mono text-[0.55rem] tracking-[0.12em] uppercase">{g.label}</span>
             </button>
@@ -48,7 +48,7 @@ export function EffectsPanel({ trackers }: { trackers: { id: string; kind: strin
       <div className="font-ws-mono text-[0.62rem] text-ws-text-tertiary">{trackers.length ? `${quads} quad · ${points} point tracker${points === 1 ? '' : 's'} on this shot` : 'no motion trackers yet: draw one first (Trackers)'}</div>
       {EFFECT_PRESETS.map((p) => (
         <div key={p.kind} data-testid={`effect-preset-${p.kind}`} draggable onDragStart={(e) => { e.dataTransfer.setData('application/x-effect-kind', p.kind); e.dataTransfer.setData('text/plain', p.kind) }}
-          className="rounded-lg border border-ws-border-subtle hover:border-ws-border-strong p-2 cursor-grab active:cursor-grabbing bg-black/20">
+          className="rounded-lg border border-ws-border-subtle hover:border-ws-border-strong p-2 cursor-grab active:cursor-grabbing well">
           <div className="flex items-center gap-2 font-ws-mono text-xs text-ws-text-primary"><span>{p.icon}</span>{p.label}<span className="ml-auto text-[0.6rem] text-ws-text-tertiary">needs {p.needs}</span></div>
           <div className="text-[0.66rem] text-ws-text-secondary mt-1 leading-snug">{p.hint}</div>
         </div>

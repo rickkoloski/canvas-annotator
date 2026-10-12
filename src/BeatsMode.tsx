@@ -105,7 +105,7 @@ export function BeatsTab({ shot, project, beats, setBeats, meta, setMeta, notes,
           {script && <button data-testid="copy-script" onClick={() => navigator.clipboard?.writeText(script)} className="ann-btn">copy script</button>}
           {msg && <span data-testid="script-status" className="text-xs font-ws-mono text-ws-sage">{msg}</span>}
         </div>
-        {script && <pre data-testid="script-text" className="text-[0.7rem] font-ws-mono text-ws-text-secondary bg-black/30 rounded-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">{script}</pre>}
+        {script && <pre data-testid="script-text" className="text-[0.7rem] font-ws-mono text-ws-text-secondary well rounded-lg p-3 max-h-96 overflow-auto whitespace-pre-wrap">{script}</pre>}
       </section>
     </div>
   )
@@ -135,7 +135,7 @@ export function MarkerStrip({ beats, setBeats, duration, sampleTimes, currentT, 
         <button data-testid="mark-beat" onClick={() => onMark(lane, target)} className="ann-btn">mark beat here ({currentT.toFixed(2)} s)</button>
         <span>drag a flag to move it</span>
       </div>
-      <div className="relative h-9 rounded-lg border border-ws-border-subtle bg-black/20 select-none" onMouseMove={onMove} onMouseUp={() => setDrag(null)} onMouseLeave={() => setDrag(null)}>
+      <div className="relative h-9 rounded-lg border border-ws-border-subtle well select-none" onMouseMove={onMove} onMouseUp={() => setDrag(null)} onMouseLeave={() => setDrag(null)}>
         {sampleTimes.map((t) => <div key={t} className="absolute top-0 h-2 w-px bg-ws-text-tertiary/40" style={{ left: pct(t) }} />)}
         <div className="absolute top-0 bottom-0 w-px bg-ws-terracotta" style={{ left: pct(currentT) }} title="current frame" />
         {beats.rows.map((r) => (

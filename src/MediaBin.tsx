@@ -52,9 +52,9 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
   const facts = (m: MediaItem) => [m.width && m.height ? `${m.width}×${m.height}` : '', m.duration !== undefined ? fmtDuration(m.duration) : '', m.fps ? `${m.fps} fps` : '', fmtSize(m.size)].filter(Boolean).join(' · ')
   const Thumb = ({ m, h }: { m: MediaItem; h: number }) => {
     const i = info[m.id]; const kind = mediaKind(m.type)
-    if (i && !i.exists) return <div style={{ height: h }} className="flex items-center justify-center rounded bg-black/40 text-ws-terracotta-text text-xs">missing</div>
-    if (kind === 'image' || kind === 'video') return <img src={thumbUrl(project.name, m)} alt="" style={{ height: h }} className="w-full object-contain rounded bg-black/40" onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2' }} />
-    return <div style={{ height: h }} className="flex items-center justify-center rounded bg-black/40 font-ws-mono text-xs text-ws-text-tertiary">{kind === 'audio' ? '♪' : '▤'} {m.type.split('/')[1]}</div>
+    if (i && !i.exists) return <div style={{ height: h }} className="flex items-center justify-center rounded well text-ws-terracotta-text text-xs">missing</div>
+    if (kind === 'image' || kind === 'video') return <img src={thumbUrl(project.name, m)} alt="" style={{ height: h }} className="w-full object-contain rounded well" onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2' }} />
+    return <div style={{ height: h }} className="flex items-center justify-center rounded well font-ws-mono text-xs text-ws-text-tertiary">{kind === 'audio' ? '♪' : '▤'} {m.type.split('/')[1]}</div>
   }
 
   return (
@@ -77,9 +77,9 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
             <div key={it.id} data-testid={`lib-${it.id}`} onContextMenu={(e) => { e.preventDefault(); setLibMenu({ id: it.id, x: e.clientX, y: e.clientY }) }} draggable
               onDragStart={(e) => { e.dataTransfer.setData('application/x-library-id', it.id); e.dataTransfer.setData('text/plain', it.file) }}
               className="min-w-0 rounded-lg p-1.5 border border-transparent hover:border-ws-border-strong flex flex-col gap-1">
-              {it.exists === false ? <div style={{ height: 72 }} className="flex items-center justify-center rounded bg-black/40 text-ws-terracotta-text text-xs">missing</div>
-                : mediaKind(it.type) === 'image' || mediaKind(it.type) === 'video' ? <img src={libraryThumbUrl(it)} alt="" style={{ height: 72 }} className="w-full object-contain rounded bg-black/40" />
-                : <div style={{ height: 72 }} className="flex items-center justify-center rounded bg-black/40 font-ws-mono text-xs text-ws-text-tertiary">{it.type.split('/')[1]}</div>}
+              {it.exists === false ? <div style={{ height: 72 }} className="flex items-center justify-center rounded well text-ws-terracotta-text text-xs">missing</div>
+                : mediaKind(it.type) === 'image' || mediaKind(it.type) === 'video' ? <img src={libraryThumbUrl(it)} alt="" style={{ height: 72 }} className="w-full object-contain rounded well" />
+                : <div style={{ height: 72 }} className="flex items-center justify-center rounded well font-ws-mono text-xs text-ws-text-tertiary">{it.type.split('/')[1]}</div>}
               <div className="font-ws-mono text-xs text-ws-text-primary truncate" title={it.file}>{it.id}</div>
               <div className="font-ws-mono text-[0.6rem] text-ws-text-tertiary truncate">{it.folder} · {facts(it)}</div>
               <button data-testid={`lib-add-${it.id}`} disabled={!!busy} onClick={() => void run('adding to project…', () => addFromLibrary(project.name, it.id))} className="ann-btn !text-[0.62rem]">add to project</button>

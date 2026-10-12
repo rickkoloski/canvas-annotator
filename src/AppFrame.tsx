@@ -10,10 +10,11 @@ import { APP_NAME } from './StartPage'
  * unsaved dot (Rick, decision 5). Dialogs are in-page; nothing uses window.alert/confirm/prompt.
  */
 export type AppFrameDialog = 'new' | 'open' | 'newshot' | 'newanim' | 'home'
-export function AppFrame({ project, dirty, onSave, shot, view, error, anim, request, onRequestHandled }: {
+export function AppFrame({ project, dirty, onSave, shot, view, error, anim, request, onRequestHandled, theme, onTheme }: {
   project: ProjectDoc | null; dirty: boolean; onSave: () => Promise<boolean>; shot: string; view: string; error?: string; anim?: string
   /** The start page asks the frame to open one of its dialogs. */
   request?: AppFrameDialog | null; onRequestHandled?: () => void
+  theme?: 'dark' | 'light'; onTheme?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [dialog, setDialog] = useState<null | 'new' | 'open' | 'saveas' | 'newshot' | 'newanim' | { unsaved: () => void }>(null)
@@ -45,8 +46,12 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim, requ
   )
 
   return (
-    <div data-testid="app-frame" className="flex items-center gap-3 mb-3 -mt-2">
-      <a href="/" data-testid="brand" className="flex items-center gap-2 mr-1" title="PortableMind Creative Suite · the welcome page"><BrandMark className="w-7 h-7" /><span className="font-ws-body font-semibold text-ws-text-primary text-sm whitespace-nowrap">{APP_NAME}</span></a>
+    <div data-testid="app-frame" className="flex flex-col gap-2 mb-3 -mt-2">
+      <div className="flex items-center gap-3">
+        <a href="/" data-testid="brand" className="flex items-center gap-2" title="PortableMind Creative Suite · the welcome page"><BrandMark className="w-7 h-7" /><span className="font-ws-body font-semibold text-ws-text-primary text-sm whitespace-nowrap">{APP_NAME}</span></a>
+        {onTheme && <button data-testid="theme-toggle" onClick={onTheme} className="ann-btn !px-2 ml-auto" title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>{theme === 'dark' ? '☀' : '☾'}</button>}
+      </div>
+      <div className="flex items-center gap-3">
       <div ref={menuRef} className="relative">
         <button data-testid="file-menu" onClick={() => setOpen((o) => !o)} className={`ann-chip ${open ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>File ▾</button>
         {open && (
@@ -93,6 +98,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim, requ
       {msg && <span data-testid="frame-status" className="font-ws-mono text-xs text-ws-sage">{msg}</span>}
       {error && <span data-testid="frame-error" className="font-ws-mono text-xs text-ws-terracotta-text">{error}</span>}
 
+      </div>
       {dialog === 'new' && <NewProjectDialog onClose={() => setDialog(null)} onCreate={async (name, canvas) => { const p = await createProject(name, canvas); rememberRecent(p.name); go(pageUrl(p.name)) }} />}
       {dialog === 'open' && <OpenProjectDialog onClose={() => setDialog(null)} onOpen={(n) => { rememberRecent(n); go(pageUrl(n)) }} />}
       {dialog === 'newshot' && project && <NewShotDialog project={project} onClose={() => setDialog(null)} onCreate={async (name, media) => { await createShot(project.name, name, media); go(pageUrl(project.name, name)) }} />}

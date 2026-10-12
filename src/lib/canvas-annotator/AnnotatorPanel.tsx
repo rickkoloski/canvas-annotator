@@ -20,9 +20,9 @@ const SHAPES: { type: ShapeKind; label: string; hint: string }[] = [
 ]
 
 const PANEL_CSS = `
-.ann-btn{font-family:'DM Mono',monospace;font-size:.7rem;color:#A9A49B;background:rgba(250,247,240,.06);border:1px solid rgba(250,247,240,.12);border-radius:8px;padding:.25rem .45rem;transition:all .2s;cursor:pointer}
+.ann-btn{font-family:'DM Mono',monospace;font-size:.7rem;color:#A9A49B;background:rgb(var(--ws-ink) / .06);border:1px solid rgb(var(--ws-ink) / .12);border-radius:8px;padding:.25rem .45rem;transition:all .2s;cursor:pointer}
 .ann-btn:hover{color:#1a0e07;background:rgba(224,155,88,.85)}
-.ann-chip{padding:.35rem .7rem;border-radius:9999px;font-size:.8rem;font-family:'DM Mono',monospace;transition:all .2s;cursor:pointer;border:1px solid rgba(250,247,240,.12)}
+.ann-chip{padding:.35rem .7rem;border-radius:9999px;font-size:.8rem;font-family:'DM Mono',monospace;transition:all .2s;cursor:pointer;border:1px solid rgb(var(--ws-ink) / .12)}
 `
 
 /** Saved shapes grouped into motion trackers by id, in first-seen order, rows sorted by frame (P1, walk 2). "Track" is a timeline layer (Camtasia sense). */
@@ -139,7 +139,7 @@ export function AnnotatorPanel({
                     className="ann-chip"
                     style={picker.shapeType === s.type
                       ? { background: 'rgba(192,106,69,0.85)', color: '#1a0e07' }
-                      : { background: 'rgba(250,247,240,0.06)', color: '#A9A49B' }}
+                      : { background: 'rgb(var(--ws-ink) / 0.06)', color: '#A9A49B' }}
                   >
                     {s.label}
                   </button>
@@ -150,7 +150,7 @@ export function AnnotatorPanel({
 
             {/* in-progress multi-point capture */}
             {drawing && current && current.kind !== 'circle' && (
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
+              <div className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: 'rgb(var(--ws-ink) / .04)' }}>
                 <span className="text-sm text-ws-text-secondary">
                   {current.kind === 'line' ? 'Line' : 'Polygon'}: {current.points.length} point{current.points.length !== 1 ? 's' : ''}
                 </span>
@@ -192,7 +192,7 @@ export function AnnotatorPanel({
                           data-testid={`point-${i}`}
                           onClick={() => picker.setSelPt(i)}
                           className="px-2 py-1 rounded-lg text-xs font-ws-mono"
-                          style={picker.selPt === i ? { background: 'rgba(224,155,88,.85)', color: '#1a0e07' } : { background: 'rgba(250,247,240,.06)', color: '#A9A49B' }}
+                          style={picker.selPt === i ? { background: 'rgba(224,155,88,.85)', color: '#1a0e07' } : { background: 'rgb(var(--ws-ink) / .06)', color: '#A9A49B' }}
                         >
                           P{i}
                         </button>
@@ -226,7 +226,7 @@ export function AnnotatorPanel({
                     <button data-testid="clear-saved" onClick={picker.clearSaved} className="ann-btn">clear</button>
                   </div>
                 </div>
-                <div data-testid="saved-list" className={`flex flex-col gap-1 bg-black/30 rounded-lg p-2 overflow-y-auto ${docked ? 'max-h-[40vh]' : 'max-h-56'}`}>
+                <div data-testid="saved-list" className={`flex flex-col gap-1 well rounded-lg p-2 overflow-y-auto ${docked ? 'max-h-[40vh]' : 'max-h-56'}`}>
                   {groupTrackers(saved).map((g) => {
                     const open = !collapsed.has(g.id); const hidden = picker.hidden.has(g.id)
                     const kindIcon = g.kind === 'circle' ? '○' : g.kind === 'line' ? '╱' : '▱'

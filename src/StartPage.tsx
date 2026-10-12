@@ -54,7 +54,7 @@ export function ProjectHome({ project, onNewShot, onNewAnimation }: { project: P
   }, [project.name, project.shots.length, project.animations?.length])   // eslint-disable-line react-hooks/exhaustive-deps
   const Card = ({ testid, href, title, sub, thumb }: { testid: string; href: string; title: string; sub: string; thumb?: string }) => (
     <a data-testid={testid} href={href} className="glass rounded-xl overflow-hidden hover:border-ws-terracotta block">
-      <div className="bg-black/40 aspect-video flex items-center justify-center">{thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" /> : <span className="font-ws-mono text-xs text-ws-text-tertiary">{sub}</span>}</div>
+      <div className="well aspect-video flex items-center justify-center">{thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" /> : <span className="font-ws-mono text-xs text-ws-text-tertiary">{sub}</span>}</div>
       <div className="px-3 py-2"><div className="font-ws-mono text-sm text-ws-text-primary truncate">{title}</div><div className="font-ws-mono text-[0.62rem] text-ws-text-tertiary">{sub}</div></div>
     </a>
   )

@@ -230,7 +230,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   // ── L1: effect layers (the shot file's effects, in stacking order) and the selected layer's handles ──
   const mediaOf = (image: unknown) => { const name = String(image ?? '').split('/').pop(); return projectDoc?.media.find((x) => x.file.split('/').pop() === name) }
   const effectLayers = (
-    <div data-testid="effect-layers" className={`flex flex-col gap-1 ${layersSlot ? 'px-3 pb-3' : 'mt-2 rounded-lg px-3 py-2'}`} style={layersSlot ? undefined : { background: 'rgba(250,247,240,.04)' }}>
+    <div data-testid="effect-layers" className={`flex flex-col gap-1 ${layersSlot ? 'px-3 pb-3' : 'mt-2 rounded-lg px-3 py-2'}`} style={layersSlot ? undefined : { background: 'rgb(var(--ws-ink) / .04)' }}>
       <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">effect layers <span className="text-ws-text-tertiary normal-case tracking-normal">· the shot file · drop a preset or a bin item on the canvas</span></span>
       {effects.length === 0 && <span className="text-xs text-ws-text-tertiary">none yet</span>}
       {effects.map((e) => (
@@ -315,19 +315,20 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
               onGestureEnd={() => { dragged.current = true; window.setTimeout(() => { dragged.current = false }, 0) }} />}
           </div>
           {/* transport (Camtasia's preview controls): play the draft in place; scrub; back to the frames for authoring */}
-          <div data-testid="transport" className="mt-2 flex flex-wrap items-center gap-2 font-ws-mono text-xs">
-            <button data-testid="step-back" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.max(0, v.currentTime - 1 / manifest.fps); setPt(v.currentTime) } } else setIdx((i) => Math.max(0, i - 1)) }} className="ann-btn w-9 text-center" title={preview ? 'one frame back' : 'previous sampled frame ( [ )'}>⏮</button>
-            <button data-testid="play-draft" onClick={() => void togglePlay()} disabled={!!engineBusy} className="ann-btn w-10 text-center disabled:opacity-40" title={draft ? (playing ? 'pause (space)' : 'play the draft (space)') : 'no draft yet: render one to play'}>{playing ? '❚❚' : '▶'}</button>
-            <button data-testid="step-fwd" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.min(duration, v.currentTime + 1 / manifest.fps); setPt(v.currentTime) } } else if (manifest) setIdx((i) => Math.min(manifest.frames.length - 1, i + 1)) }} className="ann-btn w-9 text-center" title={preview ? 'one frame forward' : 'next sampled frame ( ] )'}>⏭</button>
-            {preview ? (<>
-              <span data-testid="transport-time" className="text-ws-text-primary w-28">{pt.toFixed(2)} s / {duration.toFixed(2)} s</span>
-              <input data-testid="transport-scrub" type="range" min={0} max={duration} step={0.04} value={pt} onChange={(e) => { const v = previewVideo.current; if (v) { v.currentTime = Number(e.target.value); setPt(Number(e.target.value)) } }} className="w-64" />
-              <span className="text-ws-text-tertiary">the 1080p draft{draft ? '' : ' (none)'}</span>
-              <button data-testid="transport-close" onClick={closePreview} className="ann-btn">back to frames</button>
-            </>) : (<>
-              <span className="text-ws-text-tertiary">{draft ? 'play the rendered draft in place · [ ] step the sampled frames' : 'no draft yet · ▶ offers to render one · [ ] step the sampled frames'}</span>
-            </>)}
-            {engineBusy === 'render' && <span className="text-ws-sage">rendering the draft…</span>}
+          <div data-testid="transport" className="mt-2 flex flex-col items-center gap-1 font-ws-mono text-xs">
+            <div className="flex items-center justify-center gap-2">
+              <button data-testid="step-back" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.max(0, v.currentTime - 1 / manifest.fps); setPt(v.currentTime) } } else setIdx((i) => Math.max(0, i - 1)) }} className="ann-btn w-11 !text-sm !py-1.5 text-center" title={preview ? 'one frame back' : 'previous sampled frame ( [ )'}>⏮</button>
+              <button data-testid="play-draft" onClick={() => void togglePlay()} disabled={!!engineBusy} className="ann-btn w-14 !text-base !py-1.5 text-center disabled:opacity-40" title={draft ? (playing ? 'pause (space)' : 'play the draft (space)') : 'no draft yet: render one to play'}>{playing ? '❚❚' : '▶'}</button>
+              <button data-testid="step-fwd" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.min(duration, v.currentTime + 1 / manifest.fps); setPt(v.currentTime) } } else if (manifest) setIdx((i) => Math.min(manifest.frames.length - 1, i + 1)) }} className="ann-btn w-11 !text-sm !py-1.5 text-center" title={preview ? 'one frame forward' : 'next sampled frame ( ] )'}>⏭</button>
+              {preview && (<>
+                <span data-testid="transport-time" className="text-ws-text-primary w-32 text-center">{pt.toFixed(2)} s / {duration.toFixed(2)} s</span>
+                <input data-testid="transport-scrub" type="range" min={0} max={duration} step={0.04} value={pt} onChange={(e) => { const v = previewVideo.current; if (v) { v.currentTime = Number(e.target.value); setPt(Number(e.target.value)) } }} className="w-64" />
+                <button data-testid="transport-close" onClick={closePreview} className="ann-btn">back to frames</button>
+              </>)}
+            </div>
+            <div className="text-ws-text-tertiary text-center">
+              {engineBusy === 'render' ? <span className="text-ws-sage">rendering the draft…</span> : preview ? `the 1080p draft${draft ? '' : ' (none)'}` : draft ? 'play the rendered draft in place · [ ] step the sampled frames' : 'no draft yet · ▶ offers to render one · [ ] step the sampled frames'}
+            </div>
           </div>
           {promptRender && (
             <div data-testid="render-prompt" className="mt-2 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 border border-ws-terracotta bg-[rgba(224,155,88,.10)] text-xs">
@@ -341,7 +342,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
               const n = picker.saved.filter((s) => s.frame === f.frame).length
               return (
                 <button key={f.frame} data-testid={`frame-${f.frame}`} onClick={() => setIdx(i)}
-                  className="shrink-0 rounded-lg overflow-hidden border-2" style={{ borderColor: i === idx ? '#C06A45' : n ? '#7FA3A0' : 'rgba(250,247,240,.12)' }}>
+                  className="shrink-0 rounded-lg overflow-hidden border-2" style={{ borderColor: i === idx ? '#C06A45' : n ? '#7FA3A0' : 'rgb(var(--ws-ink) / .12)' }}>
                   <img src={`${base}/keyframes_sample/${f.path}`} alt="" className="block w-40 h-auto" />
                   <div className="font-ws-mono text-[0.62rem] px-1 py-0.5 text-ws-text-secondary flex justify-between"><span>f{f.frame}</span><span>{f.t.toFixed(1)}s{n ? ` · ${n}` : ''}</span></div>
                 </button>
@@ -354,7 +355,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
           {!layersSlot && effectLayers}
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
           {refined.length > 0 && (
-            <div data-testid="refine-bar" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgba(250,247,240,.04)' }}>
+            <div data-testid="refine-bar" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgb(var(--ws-ink) / .04)' }}>
               <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">refined</span>
               <button data-testid="refined-toggle" onClick={() => setShowRefined((v) => !v)} className={`ann-chip ${showRefined ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>{showRefined ? 'shown' : 'hidden'}</button>
               {hereRefined.map((r) => (
@@ -462,7 +463,7 @@ function EngineConsole({ manifest, onManifest, onResults, run, busy, out }: { ma
         {b('render', 'render draft', ['--res', '1080', '--stills'], onResults)}
         <span className="text-[0.62rem] text-ws-text-tertiary">a shot is rendered, not played: render the draft, then results</span>
       </div>
-      {out && <pre data-testid="engine-out" className="text-[0.66rem] font-ws-mono text-ws-text-secondary bg-black/30 rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">{out}</pre>}
+      {out && <pre data-testid="engine-out" className="text-[0.66rem] font-ws-mono text-ws-text-secondary well rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">{out}</pre>}
     </div>
   )
 }

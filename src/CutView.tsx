@@ -128,7 +128,7 @@ export function CutView({ projectDoc, mediaId, onProject }: { projectDoc: Projec
         <span className="ml-auto text-ws-text-tertiary">S split · Delete removes · space plays · ⌘Z undo</span>
       </div>
       <div ref={ruler} data-testid="cut-ruler" onMouseDown={(e) => { rulerSeek(e); const mv = (ev: MouseEvent) => { const r = ruler.current?.getBoundingClientRect(); if (r) seekOutput(((ev.clientX - r.left) / r.width) * total) }; const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up) }; window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up) }}
-        className="relative mt-2 h-6 rounded-t-lg border border-ws-border-subtle bg-black/30 cursor-ew-resize select-none">
+        className="relative mt-2 h-6 rounded-t-lg border border-ws-border-subtle well cursor-ew-resize select-none">
         {Array.from({ length: Math.max(1, Math.floor(total)) + 1 }, (_, k) => k).filter((k) => total <= 60 || k % 5 === 0).map((k) => <div key={k} className="absolute top-0 h-full border-l border-ws-text-tertiary/40 font-ws-mono text-[0.55rem] text-ws-text-tertiary pl-0.5" style={{ left: `${(k / Math.max(total, 0.001)) * 100}%` }}>{k}s</div>)}
         <div data-testid="cut-playhead" className="absolute top-0 bottom-0 w-px bg-ws-terracotta-text" style={{ left: `${(t / Math.max(total, 0.001)) * 100}%` }}><div className="absolute -top-0 -left-1.5 w-3 h-3 bg-ws-terracotta-text" style={{ clipPath: 'polygon(0 0, 100% 0, 50% 100%)' }} /></div>
       </div>
@@ -151,7 +151,7 @@ export function CutView({ projectDoc, mediaId, onProject }: { projectDoc: Projec
         ))}
         <div className="absolute top-0 bottom-0 w-px bg-ws-terracotta-text pointer-events-none" style={{ left: `${(t / Math.max(total, 0.001)) * 100}%` }} />
       </div>
-      {log && <pre data-testid="cut-log" className="mt-2 text-[0.66rem] font-ws-mono text-ws-text-secondary bg-black/30 rounded-lg p-3 max-h-32 overflow-auto whitespace-pre-wrap">{log}</pre>}
+      {log && <pre data-testid="cut-log" className="mt-2 text-[0.66rem] font-ws-mono text-ws-text-secondary well rounded-lg p-3 max-h-32 overflow-auto whitespace-pre-wrap">{log}</pre>}
       {result && <div data-testid="cut-result" className="mt-2 text-xs font-ws-mono text-ws-sage">cut applied → {result.out} in the Media Bin (replaced if it existed){result.retrack.length ? ` · re-track the shots that use it: ${result.retrack.join(', ')}` : ''}</div>}
       {applyDlg && (
         <div className="fixed inset-0 z-[70] flex items-start justify-center pt-24 bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) setApplyDlg(false) }}>

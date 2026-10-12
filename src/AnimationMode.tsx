@@ -91,7 +91,7 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
   const frames = Math.round(props.duration * props.fps)
   const isSel = (kind: 'layer' | 'text', i: number) => selected?.kind === kind && selected.i === i
   const layersList = (
-    <div data-testid="anim-layers" className={`flex flex-col gap-1 ${layersSlot ? 'p-3' : 'mt-2 rounded-lg px-3 py-2'}`} style={layersSlot ? undefined : { background: 'rgba(250,247,240,.04)' }}>
+    <div data-testid="anim-layers" className={`flex flex-col gap-1 ${layersSlot ? 'p-3' : 'mt-2 rounded-lg px-3 py-2'}`} style={layersSlot ? undefined : { background: 'rgb(var(--ws-ink) / .04)' }}>
       <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">layers <span className="text-ws-text-tertiary normal-case tracking-normal">· props.json · Remotion Studio edits the same file</span></span>
       {props.layers.length === 0 && props.texts.length === 0 && <span className="text-xs text-ws-text-tertiary">none yet</span>}
       {props.layers.map((l, i) => (
@@ -152,7 +152,7 @@ export function AnimationMode({ projectDoc, anim, onProject, layersSlot }: { pro
         <div className="absolute top-1 right-2 font-ws-mono text-[0.6rem] text-ws-text-tertiary bg-black/50 px-1 rounded pointer-events-none">Remotion Player · the same Scene the render uses · drop a Media Bin item to add a layer</div>
       </div>
       {!layersSlot && layersList}
-      {out && <pre data-testid="anim-out" className="mt-2 text-[0.66rem] font-ws-mono text-ws-text-secondary bg-black/30 rounded-lg p-3 max-h-32 overflow-auto whitespace-pre-wrap">{out}</pre>}
+      {out && <pre data-testid="anim-out" className="mt-2 text-[0.66rem] font-ws-mono text-ws-text-secondary well rounded-lg p-3 max-h-32 overflow-auto whitespace-pre-wrap">{out}</pre>}
       {draft && <section className="mt-4"><h2 className="font-ws-mono text-xs uppercase tracking-widest text-ws-sage mb-2">draft render</h2><video data-testid="anim-draft" src={draft} controls className="w-full max-w-[960px] rounded-xl border border-ws-border-subtle" /></section>}
       {studio && <section className="mt-4"><h2 className="font-ws-mono text-xs uppercase tracking-widest text-ws-sage mb-2">Remotion Studio <span className="text-ws-text-tertiary normal-case tracking-normal">· {studio} · the keyframe-adjacent step; props edited here land in props.json</span></h2><iframe data-testid="anim-studio-frame" src={studio} title="Remotion Studio" className="w-full rounded-xl border border-ws-border-subtle" style={{ height: 720 }} /></section>}
     </div>

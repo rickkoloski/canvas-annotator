@@ -19,6 +19,9 @@ const params = new URLSearchParams(window.location.search)
 export default function App() {
   const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') || params.get('anim') || params.get('cut') ? 'frames' : 'start'))
   const [frameRequest, setFrameRequest] = useState<AppFrameDialog | null>(null)
+  // theme (Rick, 2026-10-12: a light mode): remembered per browser; the OS preference otherwise
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => { try { const v = localStorage.getItem('canvas-annotator.theme'); if (v === 'light' || v === 'dark') return v } catch { /* */ } return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark' })
+  useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('canvas-annotator.theme', theme) } catch { /* */ } }, [theme])
   const [shot, setShot] = useState(params.get('shot') ?? '')
   const anim = params.get('anim') ?? undefined          // app frame A5b: an animation in the project
   const cut = params.get('cut') ?? undefined            // cut and speed: a media item's cut list
@@ -65,7 +68,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen p-6 mx-auto ${proj || mode === 'frames' || anim ? 'max-w-[1760px]' : 'max-w-[1400px]'}`}>
-      <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} request={frameRequest} onRequestHandled={() => setFrameRequest(null)} />
+      <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} request={frameRequest} onRequestHandled={() => setFrameRequest(null)} theme={theme} onTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} />
       <div className="flex gap-4 items-start">
       {(proj || mode === 'frames' || anim || cut) && (
         <ToolsRail tool={tool} onTool={setTool} onHome={proj ? () => setFrameRequest('home') : undefined} groups={[
