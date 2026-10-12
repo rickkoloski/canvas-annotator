@@ -320,12 +320,14 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
               <button data-testid="step-back" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.max(0, v.currentTime - 1 / manifest.fps); setPt(v.currentTime) } } else setIdx((i) => Math.max(0, i - 1)) }} className="ann-btn w-11 !text-sm !py-1.5 text-center" title={preview ? 'one frame back' : 'previous sampled frame ( [ )'}>⏮</button>
               <button data-testid="play-draft" onClick={() => void togglePlay()} disabled={!!engineBusy} className="ann-btn w-14 !text-base !py-1.5 text-center disabled:opacity-40" title={draft ? (playing ? 'pause (space)' : 'play the draft (space)') : 'no draft yet: render one to play'}>{playing ? '❚❚' : '▶'}</button>
               <button data-testid="step-fwd" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.min(duration, v.currentTime + 1 / manifest.fps); setPt(v.currentTime) } } else if (manifest) setIdx((i) => Math.min(manifest.frames.length - 1, i + 1)) }} className="ann-btn w-11 !text-sm !py-1.5 text-center" title={preview ? 'one frame forward' : 'next sampled frame ( ] )'}>⏭</button>
-              {preview && (<>
-                <span data-testid="transport-time" className="text-ws-text-primary w-32 text-center">{pt.toFixed(2)} s / {duration.toFixed(2)} s</span>
-                <input data-testid="transport-scrub" type="range" min={0} max={duration} step={0.04} value={pt} onChange={(e) => { const v = previewVideo.current; if (v) { v.currentTime = Number(e.target.value); setPt(Number(e.target.value)) } }} className="w-64" />
-                <button data-testid="transport-close" onClick={closePreview} className="ann-btn">back to frames</button>
-              </>)}
             </div>
+            {preview && (
+              <div className="flex items-center justify-center gap-3 w-full max-w-[720px]">
+                <span data-testid="transport-time" className="text-ws-text-primary w-32 text-right">{pt.toFixed(2)} s / {duration.toFixed(2)} s</span>
+                <input data-testid="transport-scrub" type="range" min={0} max={duration} step={0.04} value={pt} onChange={(e) => { const v = previewVideo.current; if (v) { v.currentTime = Number(e.target.value); setPt(Number(e.target.value)) } }} className="flex-1" />
+                <button data-testid="transport-close" onClick={closePreview} className="ann-btn">back to frames</button>
+              </div>
+            )}
             <div className="text-ws-text-tertiary text-center">
               {engineBusy === 'render' ? <span className="text-ws-sage">rendering the draft…</span> : preview ? `the 1080p draft${draft ? '' : ' (none)'}` : draft ? 'play the rendered draft in place · [ ] step the sampled frames' : 'no draft yet · ▶ offers to render one · [ ] step the sampled frames'}
             </div>
