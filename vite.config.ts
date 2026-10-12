@@ -54,7 +54,7 @@ function vidfxBridge(): Plugin {
   const readProject = (name: string) => { try { return JSON.parse(fs.readFileSync(path.join(PROJECTS, name, 'project.json'), 'utf8')) } catch { return null } }
   const TYPES: Record<string, string> = { '.json': 'application/json', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.yaml': 'text/yaml', '.npy': 'application/octet-stream', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.gif': 'image/gif', '.webp': 'image/webp', '.md': 'text/markdown' }
-  const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills', 'script', 'effects'])
+  const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills', 'script', 'effects'])   // `cut` runs through its own endpoint (paths, not a shot)
   const SAFE_ARG = /^[-\w.,=:/]+$/   // no spaces, no shell metacharacters; spawn without a shell anyway
   const SAFE_SHOT = /^[\w.-]+$/
   const readBody = (req: import('node:http').IncomingMessage) => new Promise<string>((resolve) => { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => resolve(b)) })
@@ -300,6 +300,52 @@ output:
           child.on('error', (e) => res.end(`\nerror ${e.message}\nexit 127\n`))
           req.on('close', () => { if (child.exitCode === null) child.kill() })
           return
+        }
+
+        // ── Cut and speed (plan 2026-10-11): a cut list on a media item, applied by `vidfx cut` into <stem>-cut.<ext> (replace) ──
+        const cm = /^\/projects\/([A-Za-z0-9][\w.-]{0,63})\/media\/([^/]+)\/(cut|frame)$/.exec(url)
+        if (cm) {
+          const project = cm[1]; const doc = readProject(project); if (!doc) { res.statusCode = 404; return res.end('unknown project') }
+          const id = decodeURIComponent(cm[2]); const m = (doc.media ?? []).find((x: { id: string }) => x.id === id); if (!m) { res.statusCode = 404; return res.end('no such media') }
+          const src = mediaPath(project, m); const mediaDir = path.join(PROJECTS, project, 'media')
+          if (cm[3] === 'frame' && req.method === 'GET') {                                            // a thumbnail at a time, for the timeline's clip bars
+            const tq = Number(new URL(req.url ?? '', 'http://x').searchParams.get('t') ?? '0'); const t = Number.isFinite(tq) ? Math.max(0, tq) : 0
+            const tdir = path.join(mediaDir, '.thumbs'); fs.mkdirSync(tdir, { recursive: true }); const file = path.join(tdir, `${m.id}_${t.toFixed(2)}.jpg`)
+            if (!fs.existsSync(file)) { const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-ss', String(t), '-i', src, '-frames:v', '1', '-vf', 'scale=240:-2', file]); if (r.status !== 0) { res.statusCode = 415; return res.end('no frame') } }
+            res.setHeader('content-type', 'image/jpeg'); res.setHeader('cache-control', 'max-age=3600'); res.setHeader('content-length', String(fs.statSync(file).size)); return fs.createReadStream(file).pipe(res)
+          }
+          if (cm[3] === 'cut' && req.method === 'PUT') {                                              // save the cut list (no apply)
+            let body: { clips?: unknown[] }; try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+            m.cut = { ...(m.cut ?? {}), clips: body.clips ?? [], saved: new Date().toISOString() }; doc.modified = new Date().toISOString(); writeProject(project, doc)
+            res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
+          }
+          if (cm[3] === 'cut' && req.method === 'POST') {                                             // apply: vidfx cut → <stem>-cut.<ext>, replace the bin item
+            let body: { clips?: unknown[]; codec?: string }; try { body = JSON.parse(await readBody(req)) } catch { res.statusCode = 400; return res.end('not JSON') }
+            const codec = body.codec === 'prores' ? 'prores' : 'h264'; const clips = body.clips ?? m.cut?.clips ?? []
+            if (!Array.isArray(clips) || !clips.length) { res.statusCode = 400; return res.end('no clips') }
+            const stem = path.basename(src).replace(/\.[^.]+$/, ''); const outName = `${stem}-cut.${codec === 'prores' ? 'mov' : 'mp4'}`; const out = path.join(mediaDir, outName)
+            const editFile = path.join(mediaDir, `${stem}.cut.json`); fs.writeFileSync(editFile, JSON.stringify({ source: m.id, clips, codec }, null, 2))
+            res.statusCode = 200; res.setHeader('content-type', 'text/plain; charset=utf-8'); res.setHeader('cache-control', 'no-store')
+            const argv = ['cut', src, '--edit', editFile, '--out', out, '--codec', codec]; res.write(`$ vidfx ${argv.join(' ')}\n`)
+            const child = spawn(VIDFX, argv, { cwd: ROOT }); let log = ''
+            child.stdout.on('data', (d) => { log += d; res.write(d) }); child.stderr.on('data', (d) => { log += d; res.write(d) })
+            child.on('close', (code) => {
+              if (code === 0 && fs.existsSync(out)) {
+                const d2 = readProject(project)
+                const prev = (d2.media ?? []).find((x: { id: string }) => x.id === outName)
+                const facts = { ...probeMedia(out), source: `cut:${m.id}`, cutOf: m.id, added: new Date().toISOString() }
+                if (prev) Object.assign(prev, facts, { file: `media/${outName}` })
+                else d2.media.push({ id: outName, file: `media/${outName}`, ...facts })
+                const srcItem = d2.media.find((x: { id: string }) => x.id === m.id); if (srcItem) srcItem.cut = { clips, codec, applied: facts.added, output: outName }
+                // shots that use the cut clip must re-track: their trackers were authored on the previous frames
+                const shotsDir = path.join(PROJECTS, project, 'shots'); const retrack = fs.existsSync(shotsDir) ? fs.readdirSync(shotsDir).filter((n) => n.endsWith('.yaml') && fs.readFileSync(path.join(shotsDir, n), 'utf8').includes(outName)).map((n) => n.replace(/\.yaml$/, '')) : []
+                d2.modified = facts.added; writeProject(project, d2)
+                res.end(`\nout media/${outName}\nretrack ${JSON.stringify(retrack)}\nexit 0\n`)
+              } else res.end(`\nexit ${code}\n`)
+            })
+            child.on('error', (e) => res.end(`\nerror ${e.message}\nexit 127\n`)); return
+          }
+          res.statusCode = 405; return res.end()
         }
 
         // ── Library (A6) ──

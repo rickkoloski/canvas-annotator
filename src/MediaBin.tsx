@@ -45,6 +45,7 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
     return (<span className="flex gap-1">
       {m.linked && <span data-testid={`media-linked-${m.id}`} title={`linked, not copied: ${m.file}`} className="font-ws-mono text-[0.6rem] px-1 rounded bg-[rgba(127,163,160,.25)] text-ws-sage">⛓ linked</span>}
       {i && !i.exists && <span data-testid={`media-missing-${m.id}`} title={m.file} className="font-ws-mono text-[0.6rem] px-1 rounded bg-[rgba(192,106,69,.35)] text-ws-terracotta-text">missing</span>}
+      {m.cutOf && <span title={`the applied cut of ${m.cutOf}`} className="font-ws-mono text-[0.6rem] px-1 rounded bg-[rgba(224,155,88,.25)] text-ws-terracotta-text">✂ cut of {m.cutOf}</span>}
       {i && i.usedBy.length === 0 && i.exists && <span title="no shot references it" className="font-ws-mono text-[0.6rem] px-1 rounded text-ws-text-tertiary border border-ws-border-subtle">unused</span>}
     </span>)
   }
@@ -132,7 +133,7 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
 
       {menu && (
         <div data-testid="media-menu" className="glass fixed z-[80] rounded-xl py-1 min-w-[160px] shadow-2xl" style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
-          {[['menu-rename', 'Rename', () => setRenaming({ id: menu.id, value: menu.id })], ['menu-add-library', 'Add to Library…', () => setLibDlg(menu.id)], ['menu-delete', 'Delete', () => void del([menu.id])]].map(([tid, label, fn]) => (
+          {[...(project.media.find((x) => x.id === menu.id)?.type.startsWith('video/') ? [['menu-cut', 'Cut and speed…', () => { window.location.assign(`/?project=${encodeURIComponent(project.name)}&cut=${encodeURIComponent(menu.id)}`) }]] : []), ['menu-rename', 'Rename', () => setRenaming({ id: menu.id, value: menu.id })], ['menu-add-library', 'Add to Library…', () => setLibDlg(menu.id)], ['menu-delete', 'Delete', () => void del([menu.id])]].map(([tid, label, fn]) => (
             <button key={tid as string} data-testid={tid as string} onClick={() => { setMenu(null); (fn as () => void)() }} className="block w-full text-left px-3 py-1.5 text-sm text-ws-text-primary hover:bg-[rgba(224,155,88,.18)]">{label as string}</button>
           ))}
           <div className="px-3 py-1 font-ws-mono text-[0.6rem] text-ws-text-tertiary truncate max-w-[260px]">{project.media.find((m) => m.id === menu.id)?.file}</div>

@@ -7,6 +7,7 @@ import { AnnotatorPanel, createSvgSpace, useShapePicker } from './lib/canvas-ann
 import { DemoVectorCanvas, ImageCanvas, useShapeOverlay } from './AnnotatedCanvas'
 import { FramesMode } from './FramesMode'
 import { AnimationMode } from './AnimationMode'
+import { CutView } from './CutView'
 import { APP_NAME, ProjectHome, Welcome } from './StartPage'
 import { BrandMark } from './Brand'
 import type { AppFrameDialog } from './AppFrame'
@@ -16,10 +17,11 @@ type Mode = 'start' | 'vector' | 'image' | 'frames'
 const params = new URLSearchParams(window.location.search)
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') || params.get('anim') ? 'frames' : 'start'))
+  const [mode, setMode] = useState<Mode>((params.get('mode') as Mode) || (params.get('shot') || params.get('anim') || params.get('cut') ? 'frames' : 'start'))
   const [frameRequest, setFrameRequest] = useState<AppFrameDialog | null>(null)
   const [shot, setShot] = useState(params.get('shot') ?? '')
   const anim = params.get('anim') ?? undefined          // app frame A5b: an animation in the project
+  const cut = params.get('cut') ?? undefined            // cut and speed: a media item's cut list
   const project = params.get('project') ?? undefined   // app frame A1: shots live in projects/<name>/; absent = legacy video-fx mounts
   // app frame A2: the project document, the unsaved dot, one Save for project.json + the shot's anchors
   const [proj, setProj] = useState<ProjectDoc | null>(null); const [projError, setProjError] = useState('')
@@ -65,7 +67,7 @@ export default function App() {
     <div className={`min-h-screen p-6 mx-auto ${proj || mode === 'frames' || anim ? 'max-w-[1760px]' : 'max-w-[1400px]'}`}>
       <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} request={frameRequest} onRequestHandled={() => setFrameRequest(null)} />
       <div className="flex gap-4 items-start">
-      {(proj || mode === 'frames' || anim) && (
+      {(proj || mode === 'frames' || anim || cut) && (
         <ToolsRail tool={tool} onTool={setTool} groups={[
           { id: 'media', label: 'Media', icon: '🎞', available: !!proj, why: 'open a project (File › New Project… or Open Project…)' },
           { id: 'effects', label: 'Effects', icon: '✦', available: !!shot && !anim, why: 'open a shot' },
@@ -91,7 +93,9 @@ export default function App() {
         </div>
       </header>
 
-      {anim && proj ? (
+      {cut && proj ? (
+        <CutView projectDoc={proj} mediaId={cut} onProject={setProj} />
+      ) : anim && proj ? (
         <AnimationMode projectDoc={proj} anim={anim} onProject={setProj} layersSlot={tool === 'layers' ? layersSlot : null} />
       ) : mode === 'start' || (mode === 'frames' && !shot) ? (
         proj ? <ProjectHome project={proj} onNewShot={() => setFrameRequest('newshot')} onNewAnimation={() => setFrameRequest('newanim')} /> : (project ? <div className="text-sm text-ws-text-tertiary">{projError || 'opening the project…'}</div> : <Welcome onNew={() => setFrameRequest('new')} onOpen={() => setFrameRequest('open')} />)

@@ -6,11 +6,14 @@
  */
 
 export type Canvas = { width: number; height: number; fps: number }
+export type CutClip = { source_in: number; source_out: number; speed: number }   // OTIO: source_range + time_scalar
 export type MediaItem = {
   id: string; file: string; type: string; added: string
   width?: number; height?: number; fps?: number; duration?: number
   source?: string           // where it was imported from
   size?: number             // bytes
+  cut?: { clips: CutClip[]; codec?: string; applied?: string; output?: string; saved?: string }   // the cut list (plan 2026-10-11)
+  cutOf?: string            // this item is the applied cut of that media id
   linked?: boolean          // true = not copied into media/ (chain badge; may go "missing")
 }
 export type ProjectDoc = {
