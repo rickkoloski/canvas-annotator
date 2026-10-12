@@ -55,7 +55,7 @@ function vidfxBridge(): Plugin {
   const TYPES: Record<string, string> = { '.json': 'application/json', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.yaml': 'text/yaml', '.npy': 'application/octet-stream', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.gif': 'image/gif', '.webp': 'image/webp', '.md': 'text/markdown' }
   const CMDS = new Set(['probe', 'keyframes', 'track', 'crops', 'render', 'stills', 'script', 'effects'])   // `cut` runs through its own endpoint (paths, not a shot)
-  const SAFE_ARG = /^[-\w.,=:/]+$/   // no spaces, no shell metacharacters; spawn without a shell anyway
+  const SAFE_ARG = /^[-\w.,=:/ ()+@\[\]]+$/   // no shell metacharacters (spawn has no shell anyway); spaces allowed: media names carry them
   const SAFE_SHOT = /^[\w.-]+$/
   const readBody = (req: import('node:http').IncomingMessage) => new Promise<string>((resolve) => { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => resolve(b)) })
   /** ffmpeg without blocking the bridge (thumbnails arrive in bursts; a sync call would stall every other request). */
