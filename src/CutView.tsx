@@ -135,8 +135,14 @@ export function CutView({ projectDoc, mediaId, onProject }: { projectDoc: Projec
       <div data-testid="cut-clips" className="relative flex h-20 rounded-b-lg border border-t-0 border-ws-border-subtle overflow-hidden select-none">
         {clips.map((c, i) => (
           <div key={i} data-testid={`cut-clip-${i}`} data-selected={sel === i ? 'true' : 'false'} onClick={() => setSel(sel === i ? null : i)} title={`${fmt(c.source_in)} → ${fmt(c.source_out)} of the source · ${c.speed}×`}
-            className={`relative h-full border-r border-black/60 cursor-pointer overflow-hidden ${sel === i ? 'ring-2 ring-inset ring-ws-terracotta' : ''}`} style={{ width: `${(clipOut(c) / Math.max(total, 0.001)) * 100}%`, background: 'rgba(127,163,160,.18)' }}>
-            <img src={`${paths.media}/${encodeURIComponent(m.id)}/frame?t=${c.source_in.toFixed(2)}`} alt="" className="absolute left-0 top-0 h-14 w-auto opacity-90" draggable={false} />
+            className={`relative h-full border-r-2 border-black cursor-pointer overflow-hidden ${sel === i ? 'ring-2 ring-inset ring-ws-terracotta' : ''}`} style={{ width: `${(clipOut(c) / Math.max(total, 0.001)) * 100}%`, background: i % 2 ? 'rgba(127,163,160,.55)' : 'rgba(127,163,160,.42)' }}>
+            {/* P6 (walk 6, Rick): the clip is a solid block for its whole duration, thumbnails tiled along it (Camtasia's clip bars) */}
+            <div className="absolute left-0 top-0 h-14 flex overflow-hidden" style={{ width: '100%' }}>
+              {Array.from({ length: Math.max(1, Math.ceil(clipOut(c) / Math.max(total / 9, 0.5))) }, (_, k) => k).map((k) => {
+                const frac = k / Math.max(1, Math.ceil(clipOut(c) / Math.max(total / 9, 0.5))); const ts = c.source_in + frac * (c.source_out - c.source_in)
+                return <img key={k} src={`${paths.media}/${encodeURIComponent(m.id)}/frame?t=${ts.toFixed(2)}`} alt="" className="h-14 w-auto opacity-90 shrink-0" draggable={false} />
+              })}
+            </div>
             <div className="absolute left-1 bottom-1 right-1 flex items-center gap-1 font-ws-mono text-[0.6rem]">
               {c.speed !== 1 && <span data-testid={`cut-clip-speed-${i}`} className="px-1 rounded bg-[rgba(224,155,88,.85)] text-[#1a0e07]">⏱ {c.speed}×</span>}
               <span className="text-ws-text-secondary truncate">{fmt(c.source_in)}–{fmt(c.source_out)}</span>

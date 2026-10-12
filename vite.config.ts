@@ -58,6 +58,8 @@ function vidfxBridge(): Plugin {
   const SAFE_ARG = /^[-\w.,=:/]+$/   // no spaces, no shell metacharacters; spawn without a shell anyway
   const SAFE_SHOT = /^[\w.-]+$/
   const readBody = (req: import('node:http').IncomingMessage) => new Promise<string>((resolve) => { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => resolve(b)) })
+  /** ffmpeg without blocking the bridge (thumbnails arrive in bursts; a sync call would stall every other request). */
+  const ffmpegAsync = (args: string[]) => new Promise<number>((resolve) => { const c = spawn('ffmpeg', args); c.on('close', (code) => resolve(code ?? 1)); c.on('error', () => resolve(127)) })
   const readRaw = (req: import('node:http').IncomingMessage) => new Promise<Buffer>((resolve) => { const c: Buffer[] = []; req.on('data', (d) => c.push(d)); req.on('end', () => resolve(Buffer.concat(c))) })
   const writeProject = (name: string, doc: unknown) => fs.writeFileSync(path.join(PROJECTS, name, 'project.json'), JSON.stringify(doc, null, 2))
   const MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.tif': 'image/tiff', '.tiff': 'image/tiff', '.bmp': 'image/bmp',
@@ -85,14 +87,14 @@ function vidfxBridge(): Plugin {
   const uniqueName = (dir: string, base: string) => { const ext = path.extname(base); const stem = base.slice(0, base.length - ext.length); let n = base, i = 2; while (fs.existsSync(path.join(dir, n))) n = `${stem}-${i++}${ext}`; return n }
   const mediaPath = (project: string, m: { file: string }) => (path.isAbsolute(m.file) ? m.file : path.join(PROJECTS, project, m.file))
   /** A thumbnail (ffmpeg first frame, cached in tdir; an svg as itself) or the file itself. */
-  const sendThumb = (res: import('node:http').ServerResponse, src: string, m: { id: string; type?: string; duration?: number }, tdir: string, thumb: boolean) => {
+  const sendThumb = async (res: import('node:http').ServerResponse, src: string, m: { id: string; type?: string; duration?: number }, tdir: string, thumb: boolean) => {
     if (!fs.existsSync(src)) { res.statusCode = 404; return res.end('missing') }
     let file = src
     if (thumb && m.type !== 'image/svg+xml') {
       fs.mkdirSync(tdir, { recursive: true }); file = path.join(tdir, `${m.id}.jpg`)
       if (!fs.existsSync(file) || fs.statSync(file).mtimeMs < fs.statSync(src).mtimeMs) {
-        const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-ss', m.duration ? String(Math.min(1, m.duration / 2)) : '0', '-i', src, '-frames:v', '1', '-vf', 'scale=320:-2', file])
-        if (r.status !== 0 || !fs.existsSync(file)) { res.statusCode = 415; return res.end('no thumbnail for this type') }
+        const code = await ffmpegAsync(['-v', 'error', '-y', '-ss', m.duration ? String(Math.min(1, m.duration / 2)) : '0', '-i', src, '-frames:v', '1', '-vf', 'scale=320:-2', file])
+        if (code !== 0 || !fs.existsSync(file)) { res.statusCode = 415; return res.end('no thumbnail for this type') }
       }
     }
     res.setHeader('content-type', TYPES[path.extname(file).toLowerCase()] ?? MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream'); res.setHeader('cache-control', 'no-store')
@@ -311,7 +313,7 @@ output:
           if (cm[3] === 'frame' && req.method === 'GET') {                                            // a thumbnail at a time, for the timeline's clip bars
             const tq = Number(new URL(req.url ?? '', 'http://x').searchParams.get('t') ?? '0'); const t = Number.isFinite(tq) ? Math.max(0, tq) : 0
             const tdir = path.join(mediaDir, '.thumbs'); fs.mkdirSync(tdir, { recursive: true }); const file = path.join(tdir, `${m.id}_${t.toFixed(2)}.jpg`)
-            if (!fs.existsSync(file)) { const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-ss', String(t), '-i', src, '-frames:v', '1', '-vf', 'scale=240:-2', file]); if (r.status !== 0) { res.statusCode = 415; return res.end('no frame') } }
+            if (!fs.existsSync(file)) { const code = await ffmpegAsync(['-v', 'error', '-y', '-ss', String(t), '-i', src, '-frames:v', '1', '-vf', 'scale=240:-2', file]); if (code !== 0 || !fs.existsSync(file)) { res.statusCode = 415; return res.end('no frame') } }
             res.setHeader('content-type', 'image/jpeg'); res.setHeader('cache-control', 'max-age=3600'); res.setHeader('content-length', String(fs.statSync(file).size)); return fs.createReadStream(file).pipe(res)
           }
           if (cm[3] === 'cut' && req.method === 'PUT') {                                              // save the cut list (no apply)
