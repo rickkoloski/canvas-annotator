@@ -244,6 +244,8 @@ output:
 `
           fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, yaml)
           doc.shots = [...(doc.shots ?? []), name]; doc.modified = new Date().toISOString(); writeProject(project, doc)
+          // sample the frames now, so the shot opens on its strip (a new shot had opened on an error before)
+          await new Promise<void>((resolve) => { const c = spawn(VIDFX, ['keyframes', file, '--every', '2.5'], { cwd: ROOT }); c.on('close', () => resolve()); c.on('error', () => resolve()) })
           res.statusCode = 201; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify(doc))
         }
 

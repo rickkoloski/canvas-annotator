@@ -68,7 +68,7 @@ export default function App() {
       <AppFrame project={proj} dirty={shotDirty || projDirty} onSave={onSave} shot={shot} view={view} error={projError} anim={anim} request={frameRequest} onRequestHandled={() => setFrameRequest(null)} />
       <div className="flex gap-4 items-start">
       {(proj || mode === 'frames' || anim || cut) && (
-        <ToolsRail tool={tool} onTool={setTool} groups={[
+        <ToolsRail tool={tool} onTool={setTool} onHome={proj ? () => setFrameRequest('home') : undefined} groups={[
           { id: 'media', label: 'Media', icon: '🎞', available: !!proj, why: 'open a project (File › New Project… or Open Project…)' },
           { id: 'effects', label: 'Effects', icon: '✦', available: !!shot && !anim, why: 'open a shot' },
           { id: 'layers', label: 'Layers', icon: '≣', available: !!shot || !!anim, why: 'open a shot or an animation' },

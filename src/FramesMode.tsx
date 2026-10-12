@@ -49,6 +49,28 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   const [loupe, setLoupe] = useState(true)
   const [resultsKey, setResultsKey] = useState(0)
   const [draft, setDraft] = useState(false)   // a 1080p draft exists for this shot (the results chip says so)
+  // the engine runner (the console under the chips, and the transport's "render a draft to play")
+  const [engineOut, setEngineOut] = useState(''); const [engineBusy, setEngineBusy] = useState('')
+  const runCmd = async (cmd: string, args: string[], after?: () => void | Promise<unknown>) => {
+    if (engineBusy) return
+    setEngineBusy(cmd); setEngineOut('')
+    const code = await runEngine(cmd, shot, args, (s) => setEngineOut((o) => o + s), project)
+    setEngineBusy('')
+    if (code === 0 && after) await after()
+  }
+  const afterEngine = () => { setResultsKey((k) => k + 1); loadRefined(); void checkDraft() }
+  // the transport (Rick, 2026-10-12): play the rendered draft in place of the frame canvas; prompt to render when there is none
+  const [preview, setPreview] = useState(false); const [playing, setPlaying] = useState(false); const [pt, setPt] = useState(0); const [promptRender, setPromptRender] = useState(false)
+  const previewVideo = useRef<HTMLVideoElement>(null)
+  const draftUrl = `${bridgePaths(project).renders}/${shot}_1080p.mp4`
+  const playDraft = async () => {
+    if (!draft) { setPromptRender(true); return }
+    setPreview(true); setPromptRender(false)
+    window.setTimeout(() => { const v = previewVideo.current; if (v) { v.currentTime = cur ? cur.t : 0; void v.play().catch(() => {}); setPlaying(true) } }, 50)
+  }
+  const togglePlay = async () => { const v = previewVideo.current; if (!preview || !v) { await playDraft(); return } if (v.paused) { await v.play().catch(() => {}); setPlaying(true) } else { v.pause(); setPlaying(false) } }
+  const closePreview = () => { previewVideo.current?.pause(); setPlaying(false); setPreview(false) }
+  const renderThenPlay = async () => { setPromptRender(false); await runCmd('render', ['--res', '1080', '--stills'], async () => { afterEngine(); setDraft(true); setPreview(true); window.setTimeout(() => { const v = previewVideo.current; if (v) { void v.play().catch(() => {}); setPlaying(true) } }, 300) }) }
   const checkDraft = async () => { try { const r = await fetch(`${bridgePaths(project).renders}/${shot}_1080p.mp4`, { method: 'HEAD' }); setDraft(r.ok) } catch { setDraft(false) } }
   const [refined, setRefined] = useState<RefinedShape[]>([])
   const [showRefined, setShowRefined] = useState(true)
@@ -138,12 +160,13 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
     const onKey = (e: KeyboardEvent) => {
       if (!manifest || ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName) || e.metaKey || e.ctrlKey) return
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected !== null) { e.preventDefault(); void effectEdit('remove', [String(selected)]); setSelected(null); return }
+      if (e.key === ' ') { e.preventDefault(); void togglePlay(); return }
       if (e.key === ']') setIdx((i) => Math.min(manifest.frames.length - 1, i + 1))
       if (e.key === '[') setIdx((i) => Math.max(0, i - 1))
       if (e.key === 'z') setLoupe((l) => !l)
     }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
-  }, [manifest, selected])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [manifest, selected, preview, draft, playing])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const extras = () => ({ beats, meta: { ...meta, updated: new Date().toISOString().slice(0, 10) }, notes, decisions })
   const fullDoc = () => (manifest ? { ...buildAnchorsDoc(manifest, picker.saved), ...extras() } : null)
@@ -273,23 +296,46 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
         <button data-testid="loupe-toggle" className={`ann-chip ${loupe ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setLoupe((l) => !l)} title="z">loupe</button>
         {manifest && cur && <span data-testid="frame-info" className="ml-auto font-ws-mono text-xs text-ws-text-tertiary">frame {cur.frame} · t={cur.t.toFixed(2)}s · {cur.width}×{cur.height} · {picker.saved.filter((s) => s.frame === cur.frame).length} shape(s) here · {picker.saved.length} total · [ ] to step</span>}
       </div>
-      {manifest && <EngineConsole shot={shot} project={project} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined(); void checkDraft() }} />}
+      {manifest && <EngineConsole manifest={manifest} onManifest={loadManifest} onResults={afterEngine} run={runCmd} busy={engineBusy} out={engineOut} />}
       {error && <div data-testid="frames-error" className="text-sm text-ws-terracotta-text mb-3">{error}</div>}
 
       {view === 'frames' && manifest && cur && (
         <div style={drawing && !hasRail && !layersSlot ? { marginRight: 360 } : undefined}>{/* legacy (no rail): the floating panel docks in this gutter; with the rail (A7) it lives in the Trackers group */}
           <div data-testid="canvas" data-canvas-root onClick={onClick} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onDragOver={(e) => { if (e.dataTransfer.types.some((t) => t === 'application/x-media-id' || t === 'application/x-library-id' || t === 'application/x-effect-kind')) e.preventDefault() }} onDrop={(e) => void onDropMedia(e)}
             className={`relative rounded-xl overflow-hidden border border-ws-border-subtle ${drawing && picker.active ? 'cursor-crosshair' : ''}`}>
-            <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />
+            {preview ? <video ref={previewVideo} data-testid="preview-video" src={`${draftUrl}?v=${resultsKey}`} className="block w-full h-auto" onTimeUpdate={(e) => setPt((e.target as HTMLVideoElement).currentTime)} onEnded={() => setPlaying(false)} playsInline />
+              : <ImageCanvas src={`${base}/keyframes_sample/${cur.path}`} width={cur.width} height={cur.height} svgRef={svgRef} />}
             {/* A5: static overlays previewed in place (tracked ones show in the engine's stills) */}
             {projectDoc && effects.filter((e) => e.kind === 'overlay' && !e.tracker && typeof e.image === 'string' && cur.t >= Number(e.start ?? 0) - 1e-6 && (e.end == null || cur.t <= Number(e.end))).map((e) => {
               const name = String(e.image).split('/').pop(); const m = projectDoc.media.find((x) => x.file.split('/').pop() === name)
               return m ? <img key={e.i} data-testid={`overlay-preview-${e.i}`} src={mediaUrl(m)} alt="" className="absolute pointer-events-none" style={{ left: `${Number(e.x ?? 0.5) * 100}%`, top: `${Number(e.y ?? 0.5) * 100}%`, width: `${Number(e.width ?? 0.3) * 100}%`, transform: 'translate(-50%, -50%)' }} /> : null
             })}
-            {loupe && <Loupe src={`${base}/keyframes_sample/${cur.path}`} svgRef={svgRef} shapes={overlay} />}
-            {selBox && <SelectionBox box={selBox.box} aspect={selBox.aspect} label={`${sel!.i} · ${sel!.kind}`} movable={selBox.movable} resizable={selBox.resizable} onCommit={selBox.commit}
+            {loupe && !preview && <Loupe src={`${base}/keyframes_sample/${cur.path}`} svgRef={svgRef} shapes={overlay} />}
+            {selBox && !preview && <SelectionBox box={selBox.box} aspect={selBox.aspect} label={`${sel!.i} · ${sel!.kind}`} movable={selBox.movable} resizable={selBox.resizable} onCommit={selBox.commit}
               onGestureEnd={() => { dragged.current = true; window.setTimeout(() => { dragged.current = false }, 0) }} />}
           </div>
+          {/* transport (Camtasia's preview controls): play the draft in place; scrub; back to the frames for authoring */}
+          <div data-testid="transport" className="mt-2 flex flex-wrap items-center gap-2 font-ws-mono text-xs">
+            <button data-testid="step-back" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.max(0, v.currentTime - 1 / manifest.fps); setPt(v.currentTime) } } else setIdx((i) => Math.max(0, i - 1)) }} className="ann-btn w-9 text-center" title={preview ? 'one frame back' : 'previous sampled frame ( [ )'}>⏮</button>
+            <button data-testid="play-draft" onClick={() => void togglePlay()} disabled={!!engineBusy} className="ann-btn w-10 text-center disabled:opacity-40" title={draft ? (playing ? 'pause (space)' : 'play the draft (space)') : 'no draft yet: render one to play'}>{playing ? '❚❚' : '▶'}</button>
+            <button data-testid="step-fwd" onClick={() => { if (preview) { const v = previewVideo.current; if (v && manifest) { v.pause(); setPlaying(false); v.currentTime = Math.min(duration, v.currentTime + 1 / manifest.fps); setPt(v.currentTime) } } else if (manifest) setIdx((i) => Math.min(manifest.frames.length - 1, i + 1)) }} className="ann-btn w-9 text-center" title={preview ? 'one frame forward' : 'next sampled frame ( ] )'}>⏭</button>
+            {preview ? (<>
+              <span data-testid="transport-time" className="text-ws-text-primary w-28">{pt.toFixed(2)} s / {duration.toFixed(2)} s</span>
+              <input data-testid="transport-scrub" type="range" min={0} max={duration} step={0.04} value={pt} onChange={(e) => { const v = previewVideo.current; if (v) { v.currentTime = Number(e.target.value); setPt(Number(e.target.value)) } }} className="w-64" />
+              <span className="text-ws-text-tertiary">the 1080p draft{draft ? '' : ' (none)'}</span>
+              <button data-testid="transport-close" onClick={closePreview} className="ann-btn">back to frames</button>
+            </>) : (<>
+              <span className="text-ws-text-tertiary">{draft ? 'play the rendered draft in place · [ ] step the sampled frames' : 'no draft yet · ▶ offers to render one · [ ] step the sampled frames'}</span>
+            </>)}
+            {engineBusy === 'render' && <span className="text-ws-sage">rendering the draft…</span>}
+          </div>
+          {promptRender && (
+            <div data-testid="render-prompt" className="mt-2 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 border border-ws-terracotta bg-[rgba(224,155,88,.10)] text-xs">
+              <span className="text-ws-text-primary">No draft of this shot yet. Render a draft to play? (1080p, about 15 s)</span>
+              <button data-testid="render-prompt-yes" onClick={() => void renderThenPlay()} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)]">render and play</button>
+              <button data-testid="render-prompt-no" onClick={() => setPromptRender(false)} className="ann-btn">not now</button>
+            </div>
+          )}
           <div data-testid="frame-strip" className="flex gap-2 mt-3 overflow-x-auto pb-2">
             {manifest.frames.map((f, i) => {
               const n = picker.saved.filter((s) => s.frame === f.frame).length
@@ -395,15 +441,8 @@ function Loupe({ src, svgRef, shapes }: { src: string; svgRef: React.RefObject<S
 }
 
 /** Run engine commands from the page through the dev bridge (tranche 1.5, 1.6). */
-function EngineConsole({ shot, project, manifest, onManifest, onResults }: { shot: string; project?: string; manifest: Manifest | null; onManifest: () => Promise<Manifest>; onResults: () => void }) {
-  const [out, setOut] = useState(''); const [busy, setBusy] = useState(''); const [frameReq, setFrameReq] = useState('')
-  const run = async (cmd: string, args: string[], after?: () => void | Promise<unknown>) => {
-    if (busy) return
-    setBusy(cmd); setOut('')
-    const code = await runEngine(cmd, shot, args, (s) => setOut((o) => o + s), project)
-    setBusy('')
-    if (code === 0 && after) await after()
-  }
+function EngineConsole({ manifest, onManifest, onResults, run, busy, out }: { manifest: Manifest | null; onManifest: () => Promise<Manifest>; onResults: () => void; run: (cmd: string, args: string[], after?: () => void | Promise<unknown>) => Promise<void>; busy: string; out: string }) {
+  const [frameReq, setFrameReq] = useState('')
   const sampleFrame = () => {
     const n = Number(frameReq); if (!Number.isInteger(n) || n < 0) return
     const have = manifest ? manifest.frames.map((f) => f.frame) : []

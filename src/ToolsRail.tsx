@@ -9,10 +9,12 @@ import type { ReactNode } from 'react'
 export type Tool = 'media' | 'effects' | 'layers'
 export type ToolGroup = { id: Tool; label: string; icon: string; available: boolean; why?: string }
 
-export function ToolsRail({ tool, onTool, groups, children }: { tool: Tool | null; onTool: (t: Tool | null) => void; groups: ToolGroup[]; children?: ReactNode }) {
+export function ToolsRail({ tool, onTool, groups, children, onHome }: { tool: Tool | null; onTool: (t: Tool | null) => void; groups: ToolGroup[]; children?: ReactNode; onHome?: () => void }) {
   return (
     <div className="flex items-start gap-0 self-start sticky top-4">
       <nav data-testid="tools-rail" className="glass rounded-2xl p-1.5 flex flex-col gap-1 w-16">
+        {onHome && <button data-testid="rail-home" onClick={onHome} title="Project home (shots, animations, media)" className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 border border-transparent text-ws-text-secondary hover:bg-[rgba(250,247,240,.06)] hover:text-ws-text-primary"><span className="text-lg leading-none">⌂</span><span className="font-ws-mono text-[0.55rem] tracking-[0.12em] uppercase">Home</span></button>}
+        {onHome && <div className="my-0.5 border-t border-ws-border-subtle" />}
         {groups.map((g) => {
           const active = tool === g.id
           return (

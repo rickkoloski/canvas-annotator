@@ -7,7 +7,7 @@ import { Select } from './lib/ui/Select'
  * New Project…, Open Project…, Open Recent, Save (⌘S), Save As…, Close Project. Explicit saves with an
  * unsaved dot (Rick, decision 5). Dialogs are in-page; nothing uses window.alert/confirm/prompt.
  */
-export type AppFrameDialog = 'new' | 'open' | 'newshot' | 'newanim'
+export type AppFrameDialog = 'new' | 'open' | 'newshot' | 'newanim' | 'home'
 export function AppFrame({ project, dirty, onSave, shot, view, error, anim, request, onRequestHandled }: {
   project: ProjectDoc | null; dirty: boolean; onSave: () => Promise<boolean>; shot: string; view: string; error?: string; anim?: string
   /** The start page asks the frame to open one of its dialogs. */
@@ -15,7 +15,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim, requ
 }) {
   const [open, setOpen] = useState(false)
   const [dialog, setDialog] = useState<null | 'new' | 'open' | 'saveas' | 'newshot' | 'newanim' | { unsaved: () => void }>(null)
-  useEffect(() => { if (request) { setDialog(request); onRequestHandled?.() } }, [request])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (request) { if (request === 'home') { if (project) guarded(() => go(pageUrl(project.name))) } else setDialog(request); onRequestHandled?.() } }, [request])   // eslint-disable-line react-hooks/exhaustive-deps
   const [msg, setMsg] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const zipRef = useRef<HTMLInputElement>(null)
@@ -69,7 +69,6 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim, requ
       </div>
       <input ref={zipRef} data-testid="import-zip-input" type="file" accept=".zip,application/zip" className="hidden"
         onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; try { setMsg('importing…'); const p = await importZip(f); rememberRecent(p.name); go(pageUrl(p.name)) } catch (err) { setMsg(`import failed: ${String((err as Error).message ?? err)}`) } }} />
-      {project && <button data-testid="project-home" onClick={() => guarded(() => go(pageUrl(project.name)))} className="ann-btn !px-2" title="Project home (shots, animations, media)">⌂</button>}
       <span data-testid="project-name" className="font-ws-mono text-sm text-ws-text-primary flex items-center gap-1.5">
         <span className="text-ws-text-tertiary text-xs">project</span>
         {project ? project.name : <span className="text-ws-text-tertiary">none · legacy shots</span>}
