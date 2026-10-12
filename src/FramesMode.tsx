@@ -296,7 +296,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
         <button data-testid="loupe-toggle" className={`ann-chip ${loupe ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setLoupe((l) => !l)} title="z">loupe</button>
         {manifest && cur && <span data-testid="frame-info" className="ml-auto font-ws-mono text-xs text-ws-text-tertiary">frame {cur.frame} · t={cur.t.toFixed(2)}s · {cur.width}×{cur.height} · {picker.saved.filter((s) => s.frame === cur.frame).length} shape(s) here · {picker.saved.length} total · [ ] to step</span>}
       </div>
-      {manifest && <EngineConsole manifest={manifest} onManifest={loadManifest} onResults={afterEngine} run={runCmd} busy={engineBusy} out={engineOut} />}
+      {manifest && <EngineConsole manifest={manifest} onManifest={loadManifest} onResults={afterEngine} run={runCmd} busy={engineBusy} />}
       {error && <div data-testid="frames-error" className="text-sm text-ws-terracotta-text mb-3">{error}</div>}
 
       {view === 'frames' && manifest && cur && (
@@ -353,6 +353,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
             target={markTarget} setTarget={setPickedTarget}
             onMark={(lane, target) => setBeats(markBeat({ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }, cur.t, lane, target).beats)} />
           {!layersSlot && effectLayers}
+          {engineOut && <pre data-testid="engine-out" className="mt-2 text-[0.66rem] font-ws-mono text-ws-text-secondary well rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">{engineOut}</pre>}
           {savedMsg && <div data-testid="save-status" className="mt-2 text-xs font-ws-mono text-ws-sage">{savedMsg}</div>}
           {refined.length > 0 && (
             <div data-testid="refine-bar" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'rgb(var(--ws-ink) / .04)' }}>
@@ -385,6 +386,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
           decisions={decisions} setDecisions={setDecisions} trackerIds={trackerIds} duration={duration} onSaveAnchors={save} />
       )}
       {view === 'results' && <Results key={resultsKey} shot={shot} project={project} />}
+      {view !== 'frames' && engineOut && <pre data-testid="engine-out" className="mt-2 text-[0.66rem] font-ws-mono text-ws-text-secondary well rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">{engineOut}</pre>}
     </div>
   )
 }
@@ -442,7 +444,7 @@ function Loupe({ src, svgRef, shapes }: { src: string; svgRef: React.RefObject<S
 }
 
 /** Run engine commands from the page through the dev bridge (tranche 1.5, 1.6). */
-function EngineConsole({ manifest, onManifest, onResults, run, busy, out }: { manifest: Manifest | null; onManifest: () => Promise<Manifest>; onResults: () => void; run: (cmd: string, args: string[], after?: () => void | Promise<unknown>) => Promise<void>; busy: string; out: string }) {
+function EngineConsole({ manifest, onManifest, onResults, run, busy }: { manifest: Manifest | null; onManifest: () => Promise<Manifest>; onResults: () => void; run: (cmd: string, args: string[], after?: () => void | Promise<unknown>) => Promise<void>; busy: string }) {
   const [frameReq, setFrameReq] = useState('')
   const sampleFrame = () => {
     const n = Number(frameReq); if (!Number.isInteger(n) || n < 0) return
@@ -463,7 +465,6 @@ function EngineConsole({ manifest, onManifest, onResults, run, busy, out }: { ma
         {b('render', 'render draft', ['--res', '1080', '--stills'], onResults)}
         <span className="text-[0.62rem] text-ws-text-tertiary">a shot is rendered, not played: render the draft, then results</span>
       </div>
-      {out && <pre data-testid="engine-out" className="text-[0.66rem] font-ws-mono text-ws-text-secondary well rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">{out}</pre>}
     </div>
   )
 }
