@@ -36,7 +36,7 @@ export function ToolsRail({ tool, onTool, groups, children, onHome }: { tool: To
 export const EFFECT_PRESETS: { kind: 'flyout' | 'pin' | 'bubble' | 'overlay'; label: string; icon: string; needs: string; hint: string }[] = [
   { kind: 'flyout', label: 'Fly-out', icon: '⤴', needs: 'a quad tracker', hint: 'the screen lifts toward the viewer and flattens, carrying a UI (a still or a recording from the bin)' },
   { kind: 'pin', label: 'Pin', icon: '📌', needs: 'a tracker', hint: 'a card held on a quad, or beside a point, for a time window' },
-  { kind: 'bubble', label: 'Speech bubble', icon: '💬', needs: 'a point tracker', hint: 'a balloon with a tail to the point; springs in, pops out' },
+  { kind: 'bubble', label: 'Speech bubble', icon: '💬', needs: 'a point, or nothing', hint: 'a balloon with a tail: to a point tracker, or fixed where you drop it; springs in, pops out' },
   { kind: 'overlay', label: 'Overlay', icon: '🖼', needs: 'an image in the bin', hint: 'an image on the frame: static, beside a point, or warped onto a quad. Drop a Media Bin image on the canvas, or this preset to use the first image' },
 ]
 

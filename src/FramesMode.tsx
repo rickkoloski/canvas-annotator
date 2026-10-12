@@ -97,9 +97,9 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
       const t0 = cur.t.toFixed(2); let args: string[] | null = null
       if (kind === 'flyout') args = quads.length ? [`tracker=${quads[0]}`, `start=${t0}`, 'dur=2.0'] : null
       else if (kind === 'pin') args = quads.length || points.length ? [`tracker=${quads[0] ?? points[0]}`, `start=${t0}`] : null
-      else if (kind === 'bubble') args = points.length ? [`tracker=${points[0]}`, `start=${t0}`, `end=${(cur.t + 3).toFixed(2)}`, 'text=…'] : null
+      else if (kind === 'bubble') { const p = space.screenToCanvas(e.clientX, e.clientY); args = points.length ? [`tracker=${points[0]}`, `start=${t0}`, `end=${(cur.t + 3).toFixed(2)}`, 'text=…'] : p ? ['tracker=none', `at=[${Math.round(p.x)},${Math.round(p.y)}]`, `start=${t0}`, `end=${(cur.t + 3).toFixed(2)}`, 'text=…'] : null }   // no point tracker: a fixed bubble at the drop point (Camtasia's callout)
       else if (kind === 'overlay') { const img = projectDoc?.media.find((m) => m.type.startsWith('image/') && !m.linked); args = img ? [`image=../media/${img.file.split('/').pop()}`, 'x=0.5', 'y=0.5', 'width=0.3', `start=${t0}`, 'tracker=none'] : null }
-      if (!args) { setSavedMsg(`${kind} needs ${kind === 'overlay' ? 'an image in the Media Bin' : kind === 'bubble' ? 'a point tracker' : kind === 'flyout' ? 'a quad tracker' : 'a tracker'} on this shot`); window.setTimeout(() => setSavedMsg(''), 4000); return }
+      if (!args) { setSavedMsg(`${kind} needs ${kind === 'overlay' ? 'an image in the Media Bin' : kind === 'flyout' ? 'a quad tracker' : 'a tracker'} on this shot`); window.setTimeout(() => setSavedMsg(''), 4000); return }
       await effectEdit('add', [`kind=${kind}`, ...args]); return
     }
     let id = e.dataTransfer.getData('application/x-media-id'); const libId = e.dataTransfer.getData('application/x-library-id')
@@ -258,6 +258,11 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
       const w = Number(sel.width ?? 0.3); const h = (w * cur.width) / aspect / cur.height
       return { box: { x: Number(sel.x ?? 0.5), y: Number(sel.y ?? 0.5), w, h }, aspect: aspect * (cur.height / cur.width), movable: true, resizable: true,
         commit: (b: Box) => void effectEdit('set', [String(sel.i), `x=${b.x}`, `y=${b.y}`, `width=${b.w}`]) }
+    }
+    if (sel.kind === 'bubble' && !sel.tracker && Array.isArray(sel.at)) {                       // a fixed bubble: drag its anchor point
+      const at = sel.at as number[]; const size = 0.06
+      return { box: { x: at[0] / cur.width, y: at[1] / cur.height, w: size, h: size * cur.width / cur.height }, aspect: 1, movable: true, resizable: false,
+        commit: (b: Box) => void effectEdit('set', [String(sel.i), `at=[${Math.round(b.x * cur.width)},${Math.round(b.y * cur.height)}]`]) }
     }
     // attached to a tracker: the handle is the offset from the tracker's position on this frame (keyframes only)
     const sh = picker.saved.find((x) => x.id === sel.tracker && x.frame === cur.frame)
