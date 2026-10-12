@@ -69,6 +69,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim, requ
       </div>
       <input ref={zipRef} data-testid="import-zip-input" type="file" accept=".zip,application/zip" className="hidden"
         onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; try { setMsg('importing…'); const p = await importZip(f); rememberRecent(p.name); go(pageUrl(p.name)) } catch (err) { setMsg(`import failed: ${String((err as Error).message ?? err)}`) } }} />
+      {project && <button data-testid="project-home" onClick={() => guarded(() => go(pageUrl(project.name)))} className="ann-btn !px-2" title="Project home (shots, animations, media)">⌂</button>}
       <span data-testid="project-name" className="font-ws-mono text-sm text-ws-text-primary flex items-center gap-1.5">
         <span className="text-ws-text-tertiary text-xs">project</span>
         {project ? project.name : <span className="text-ws-text-tertiary">none · legacy shots</span>}
