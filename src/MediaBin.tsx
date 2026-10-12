@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { MediaItem, ProjectDoc } from './project'
 import { addFromLibrary, addMediaFromPath, addToLibrary, deleteLibraryItem, deleteMedia, fmtDuration, fmtSize, importMediaFiles, libraryFolders, libraryThumbUrl, loadLibrary, mediaInfo, mediaKind, renameMedia, sortMedia, thumbUrl, DEFAULT_FOLDERS, type LibraryDoc, type LibraryItem, type MediaInfo, type SortBy, type View } from './media'
 import { Select } from './lib/ui/Select'
@@ -131,23 +132,21 @@ export function MediaBin({ project, onProject }: { project: ProjectDoc; onProjec
         </div>
       </>)}
 
-      {menu && (
+      {menu && createPortal(
         <div data-testid="media-menu" className="glass fixed z-[80] rounded-xl py-1 min-w-[160px] shadow-2xl" style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
           {[...(project.media.find((x) => x.id === menu.id)?.type.startsWith('video/') ? [['menu-cut', 'Cut and speed…', () => { window.location.assign(`/?project=${encodeURIComponent(project.name)}&cut=${encodeURIComponent(menu.id)}`) }]] : []), ['menu-rename', 'Rename', () => setRenaming({ id: menu.id, value: menu.id })], ['menu-add-library', 'Add to Library…', () => setLibDlg(menu.id)], ['menu-delete', 'Delete', () => void del([menu.id])]].map(([tid, label, fn]) => (
             <button key={tid as string} data-testid={tid as string} onClick={() => { setMenu(null); (fn as () => void)() }} className="block w-full text-left px-3 py-1.5 text-sm text-ws-text-primary hover:bg-[rgba(224,155,88,.18)]">{label as string}</button>
           ))}
           <div className="px-3 py-1 font-ws-mono text-[0.6rem] text-ws-text-tertiary truncate max-w-[260px]">{project.media.find((m) => m.id === menu.id)?.file}</div>
-        </div>
-      )}
-      {libMenu && (
+        </div>, document.body)}
+      {libMenu && createPortal(
         <div data-testid="library-menu" className="glass fixed z-[80] rounded-xl py-1 min-w-[160px] shadow-2xl" style={{ left: libMenu.x, top: libMenu.y }} onMouseDown={(e) => e.stopPropagation()}>
           <button data-testid="libmenu-add" onClick={() => { const id = libMenu.id; setLibMenu(null); void run('adding to project…', () => addFromLibrary(project.name, id)) }} className="block w-full text-left px-3 py-1.5 text-sm text-ws-text-primary hover:bg-[rgba(224,155,88,.18)]">Add to project</button>
           <button data-testid="libmenu-delete" onClick={() => { const id = libMenu.id; setLibMenu(null); void libRun('deleting…', () => deleteLibraryItem(id)) }} className="block w-full text-left px-3 py-1.5 text-sm text-ws-text-primary hover:bg-[rgba(224,155,88,.18)]">Delete from Library</button>
-        </div>
-      )}
-      {libDlg && <AddToLibraryDialog id={libDlg} folders={[...new Set([...DEFAULT_FOLDERS, ...libraryFolders(lib)])]} onClose={() => setLibDlg(null)}
-        onAdd={async (folder) => { const id = libDlg; setLibDlg(null); await libRun('adding to Library…', () => addToLibrary(project.name, id, folder)); setTab('library') }} />}
-      {pathDlg && <FromPathDialog onClose={() => setPathDlg(false)} onAdd={async (p, link) => { setPathDlg(false); await run(link ? 'linking…' : 'copying…', () => addMediaFromPath(project.name, p, link)) }} />}
+        </div>, document.body)}
+      {libDlg && createPortal(<AddToLibraryDialog id={libDlg} folders={[...new Set([...DEFAULT_FOLDERS, ...libraryFolders(lib)])]} onClose={() => setLibDlg(null)}
+        onAdd={async (folder) => { const id = libDlg; setLibDlg(null); await libRun('adding to Library…', () => addToLibrary(project.name, id, folder)); setTab('library') }} />, document.body)}
+      {pathDlg && createPortal(<FromPathDialog onClose={() => setPathDlg(false)} onAdd={async (p, link) => { setPathDlg(false); await run(link ? 'linking…' : 'copying…', () => addMediaFromPath(project.name, p, link)) }} />, document.body)}
     </aside>
   )
 }
