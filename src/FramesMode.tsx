@@ -48,6 +48,8 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
   const [notes, setNotes] = useState<string[]>([]); const [decisions, setDecisions] = useState<{ date: string; decision: string; by: string }[]>([])
   const [loupe, setLoupe] = useState(true)
   const [resultsKey, setResultsKey] = useState(0)
+  const [draft, setDraft] = useState(false)   // a 1080p draft exists for this shot (the results chip says so)
+  const checkDraft = async () => { try { const r = await fetch(`${bridgePaths(project).renders}/${shot}_1080p.mp4`, { method: 'HEAD' }); setDraft(r.ok) } catch { setDraft(false) } }
   const [refined, setRefined] = useState<RefinedShape[]>([])
   const [showRefined, setShowRefined] = useState(true)
   const drag = useRef<{ index: number; point: number; handle?: 'in' | 'out'; broken?: boolean; fromVertex?: boolean } | null>(null)
@@ -114,7 +116,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
       }
       await loadRefined()
     }).catch((e) => setError(String(e.message ?? e)))
-    void loadEffects()
+    void loadEffects(); void checkDraft()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shot, project])   // A4: the project decides the work path
 
@@ -266,11 +268,12 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
             placeholder="frustration-walk" className="font-ws-mono text-sm bg-transparent text-ws-text-primary border border-ws-border-subtle rounded-lg px-2 py-1 w-56 outline-none focus:border-ws-terracotta" />
         </label>
         <button data-testid="view-frames" className={`ann-chip ${view === 'frames' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('frames')}>frames</button>
-        <button data-testid="view-results" className={`ann-chip ${view === 'results' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('results')}>results</button>
+        <button data-testid="view-results" className={`ann-chip ${view === 'results' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('results')}>results{draft ? ' · draft' : ''}</button>
         <button data-testid="view-beats" className={`ann-chip ${view === 'beats' ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setView('beats')}>beats{beats.rows.length ? ` (${beats.rows.length})` : ''}</button>
         <button data-testid="loupe-toggle" className={`ann-chip ${loupe ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`} onClick={() => setLoupe((l) => !l)} title="z">loupe</button>
         {manifest && cur && <span data-testid="frame-info" className="ml-auto font-ws-mono text-xs text-ws-text-tertiary">frame {cur.frame} · t={cur.t.toFixed(2)}s · {cur.width}×{cur.height} · {picker.saved.filter((s) => s.frame === cur.frame).length} shape(s) here · {picker.saved.length} total · [ ] to step</span>}
       </div>
+      {manifest && <EngineConsole shot={shot} project={project} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined(); void checkDraft() }} />}
       {error && <div data-testid="frames-error" className="text-sm text-ws-terracotta-text mb-3">{error}</div>}
 
       {view === 'frames' && manifest && cur && (
@@ -319,7 +322,6 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
               <button data-testid="retrack" disabled={retracking} onClick={retrack} className="ann-btn !text-[#1a0e07] !bg-[rgba(224,155,88,.85)] disabled:opacity-40">{retracking ? 'tracking…' : 'save & re-track'}</button>
             </div>
           )}
-          <EngineConsole shot={shot} project={project} manifest={manifest} onManifest={loadManifest} onResults={() => { setResultsKey((k) => k + 1); loadRefined() }} />
           {drawing && (() => {
             const panel = <AnnotatorPanel picker={picker} title={layersSlot ? 'Guide layers · motion trackers' : `Annotate · ${shot}`} docked={!!layersSlot} onJumpFrame={jumpToFrame} onSelectTracker={setPickedTarget} selectedTracker={markTarget} extraActions={<>
               <button data-testid="copy-json" onClick={copyJson} className="ann-btn">copy json</button>
@@ -335,10 +337,7 @@ export function FramesMode({ shot, drawing, onShotChange, project, saveTick, onD
         <BeatsTab shot={shot} project={project} beats={{ ...beats, lanes: beats.lanes.length ? beats.lanes : laneNames }} setBeats={setBeats} meta={meta} setMeta={setMeta} notes={notes} setNotes={setNotes}
           decisions={decisions} setDecisions={setDecisions} trackerIds={trackerIds} duration={duration} onSaveAnchors={save} />
       )}
-      {view === 'results' && <>
-        <EngineConsole shot={shot} manifest={manifest} onManifest={loadManifest} onResults={() => setResultsKey((k) => k + 1)} />
-        <Results key={resultsKey} shot={shot} project={project} />
-      </>}
+      {view === 'results' && <Results key={resultsKey} shot={shot} project={project} />}
     </div>
   )
 }
@@ -411,10 +410,10 @@ function EngineConsole({ shot, project, manifest, onManifest, onResults }: { sho
     run('keyframes', ['--frames', [...new Set([...have, n])].sort((a, b) => a - b).join(',')], onManifest)
   }
   const b = (cmd: string, label: string, args: string[], after?: () => void | Promise<unknown>) => (
-    <button data-testid={`engine-${cmd}`} disabled={!!busy} onClick={() => run(cmd, args, after)} className="ann-btn disabled:opacity-40">{busy === cmd ? `${label}…` : label}</button>
+    <button data-testid={`engine-${cmd}`} disabled={!!busy} onClick={() => run(cmd, args, after)} className={`ann-btn disabled:opacity-40 ${cmd === 'render' ? '!text-[#1a0e07] !bg-[rgba(224,155,88,.85)]' : ''}`}>{busy === cmd ? `${label}…` : label}</button>
   )
   return (
-    <div data-testid="engine-console" className="mt-3 flex flex-col gap-2">
+    <div data-testid="engine-console" className="mb-3 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-ws-mono text-[0.6rem] tracking-[0.22em] uppercase text-ws-sage">engine</span>
         <input data-testid="sample-frame-input" value={frameReq} onChange={(e) => setFrameReq(e.target.value)} placeholder="frame #" className="font-ws-mono text-xs bg-transparent text-ws-text-primary border border-ws-border-subtle rounded-lg px-2 py-1 w-20 outline-none focus:border-ws-terracotta" />
@@ -422,6 +421,7 @@ function EngineConsole({ shot, project, manifest, onManifest, onResults }: { sho
         {b('track', 'track motion', [], onResults)}
         {b('crops', 'crops', ['--frames', '248,434'], onResults)}
         {b('render', 'render draft', ['--res', '1080', '--stills'], onResults)}
+        <span className="text-[0.62rem] text-ws-text-tertiary">a shot is rendered, not played: render the draft, then results</span>
       </div>
       {out && <pre data-testid="engine-out" className="text-[0.66rem] font-ws-mono text-ws-text-secondary bg-black/30 rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap">{out}</pre>}
     </div>
