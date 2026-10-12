@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createAnimation, createProject, createShot, exportZipUrl, importZip, listProjects, pageUrl, readRecent, rememberRecent, saveProjectAs, DEFAULT_CANVAS, SAFE_NAME, type Canvas, type ProjectDoc, type ProjectSummary } from './project'
 import { Select } from './lib/ui/Select'
+import { BrandMark } from './Brand'
+import { APP_NAME } from './StartPage'
 
 /**
  * App frame A2 (plans/2026-10-10_app-frame.md): the File menu and project bar, with Camtasia's names:
@@ -44,6 +46,7 @@ export function AppFrame({ project, dirty, onSave, shot, view, error, anim, requ
 
   return (
     <div data-testid="app-frame" className="flex items-center gap-3 mb-3 -mt-2">
+      <a href="/" data-testid="brand" className="flex items-center gap-2 mr-1" title="PortableMind Creative Suite · the welcome page"><BrandMark className="w-7 h-7" /><span className="font-ws-body font-semibold text-ws-text-primary text-sm whitespace-nowrap">{APP_NAME}</span></a>
       <div ref={menuRef} className="relative">
         <button data-testid="file-menu" onClick={() => setOpen((o) => !o)} className={`ann-chip ${open ? 'text-ws-text-primary border-ws-terracotta' : 'text-ws-text-secondary'}`}>File ▾</button>
         {open && (

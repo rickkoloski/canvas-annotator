@@ -79,8 +79,9 @@ export default function App() {
         </ToolsRail>
       )}
       <div className="flex-1 min-w-0">
+      {!proj && !shot && !anim && !cut && (mode === 'vector' || mode === 'image') && (
       <header className="flex flex-wrap items-center gap-3 mb-4">
-        <a href="/" data-testid="brand" className="flex items-center gap-2"><BrandMark className="w-7 h-7" /><h1 className="font-ws-body font-semibold text-ws-text-primary text-base">{APP_NAME}</h1></a>
+        <span className="font-ws-mono text-ws-text-tertiary text-sm">the standalone annotator (June demo)</span>
         <div className="ml-auto flex items-center gap-2">
           {chip('start', 'start')}
           {chip('vector', 'vector demo')}
@@ -92,6 +93,7 @@ export default function App() {
           <button data-testid="drawing-toggle" className="ann-btn" onClick={() => setDrawing((d) => !d)}>{drawing ? 'drawing: on' : 'drawing: off'}</button>
         </div>
       </header>
+      )}
 
       {cut && proj ? (
         <CutView projectDoc={proj} mediaId={cut} onProject={setProj} />
